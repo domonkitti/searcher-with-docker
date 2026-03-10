@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: search-config
+  namespace: searchable-from-book
+data:
+  ADDR: ":8080"
+  ALLOW_ORIGINS: "https://YOUR_DOMAIN"
+  RULES_JSON: "data/rules.json"
+  SYNONYMS_JSON: "data/synonyms.json"
+  TITLE_BOOST: "3"
+  MIN_SCORE: "0.2"
+  NGRAM_MIN: "3"
+  NGRAM_MAX: "6"
+  NEXT_PROXY_URL: "http://search-web:3000"

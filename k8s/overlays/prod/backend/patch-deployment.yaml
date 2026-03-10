@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-api
+spec:
+  replicas: 2
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/role: "search-backend"
+        vault.hashicorp.com/agent-inject-secret-backend-env: "kv/data/searchable-from-book/prod/backend"
+        vault.hashicorp.com/agent-inject-template-backend-env: |
+          {{- with secret "kv/data/searchable-from-book/prod/backend" -}}
+          export DATABASE_URL="{{ .Data.data.DATABASE_URL }}"
+          {{- end }}
+    spec:
+      containers:
+        - name: api
+          image: YOUR_REGISTRY/search-api:prod

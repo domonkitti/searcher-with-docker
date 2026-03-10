@@ -1,0 +1,8 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: searchable-from-book-dev
+resources:
+  - ../../../base/postgres
+patches:
+  - path: patch-secret.yaml
+  - path: patch-statefulset.yaml

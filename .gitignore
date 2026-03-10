@@ -1,0 +1,20 @@
+# dependencies
+node_modules/
+frontend/node_modules/
+
+# next build
+.next/
+frontend/.next/
+
+# logs
+*.log
+
+# env
+.env
+.env.local
+
+# Excel / data files (เลือกแบบที่ต้องการ)
+*.xlsx
+
+**/node_modules/
+**/.next/

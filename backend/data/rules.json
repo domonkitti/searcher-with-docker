@@ -1,0 +1,44 @@
+{
+  "inputs": [
+    {
+      "key": "price",
+      "label": "ราคาต่อชิ้น",
+      "type": "number",
+      "unit": "บาท",
+      "default": 0
+    },
+    {
+      "key": "lifespanYears",
+      "label": "อายุการใช้งาน",
+      "type": "number",
+      "unit": "ปี",
+      "default": 0
+    }
+  ],
+  "rules": [
+    {
+      "key": "price",
+      "label": "ราคาต่อชิ้น",
+      "enabled": true,
+      "op": ">=",
+      "value": 10000
+    },
+    {
+      "key": "lifespanYears",
+      "label": "อายุการใช้งาน",
+      "enabled": true,
+      "op": ">=",
+      "value": 5
+    },
+    {
+      "key": "dummy_1",
+      "label": "เงื่อนไขอื่นๆ (dummy)",
+      "enabled": false,
+      "op": ">=",
+      "value": 0
+    }
+  ],
+  "budgetAllTrue": "ใช้งบลงทุน",
+  "budgetOtherwise": "งบดำเนินการ",
+  "logicNote": "wait for more information"
+}

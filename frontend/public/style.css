@@ -1,0 +1,104 @@
+:root{
+  --bg:#f6f7fb;
+  --card:#ffffff;
+  --text:#111827;
+  --muted:#6b7280;
+  --border:#e5e7eb;
+  --blue:#1a73e8;
+  --shadow:0 8px 30px rgba(17,24,39,.08);
+  --radius:16px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans Thai", sans-serif;
+  background:var(--bg);
+  color:var(--text);
+}
+.wrap{ max-width:920px; margin:0 auto; padding:24px 16px 48px; }
+.topbar{ display:flex; justify-content:flex-end; margin-bottom:18px; }
+.nav{ display:flex; gap:14px; align-items:center; padding:10px 12px; background:rgba(255,255,255,.7);
+  border:1px solid var(--border); border-radius:999px; backdrop-filter: blur(8px); }
+.nav a{ color:var(--muted); text-decoration:none; font-size:14px; padding:6px 10px; border-radius:999px; }
+.nav a:hover{ background:#f3f4f6; color:var(--text); }
+.logo{ font-size:44px; font-weight:800; letter-spacing:-1px; text-align:center; margin:14px 0 16px; }
+.logo span{ color:var(--blue); }
+.searchBox{ display:flex; gap:10px; background:var(--card); border:1px solid var(--border); border-radius:999px;
+  padding:10px; box-shadow:var(--shadow); }
+.searchBox input{ flex:1; border:0; outline:0; font-size:16px; padding:10px 14px; background:transparent; }
+.searchBox button{ border:0; outline:0; background:var(--blue); color:#fff; padding:10px 16px; border-radius:999px;
+  cursor:pointer; font-weight:600; }
+.searchBox button:hover{ filter: brightness(.95); }
+.topLinks{ text-align:center; margin:10px 0 18px; font-size:14px; }
+.linkish{ color:var(--blue); text-decoration: underline; cursor:pointer; }
+.results{ display:flex; flex-direction:column; gap:14px; }
+.result{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px;
+  box-shadow:var(--shadow); }
+.title{ display:inline-block; color:var(--blue); text-decoration:none; font-size:18px; font-weight:700; margin-bottom:6px; }
+.title:hover{ text-decoration: underline; }
+.title.no-hover:hover {
+  text-decoration: none;
+}
+.meta{ color:var(--muted); font-size:13px; line-height:1.5; }
+.meta {
+  font-size: 13px;
+  color: #555;
+  line-height: 1.3;
+}
+.meta div {
+  margin: 0;
+}
+.card{ background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow); }
+.small{ color:var(--muted); font-size:14px; }
+
+/* ✅ Excel Alt+Enter newlines */
+.detailText{ white-space: pre-wrap; word-break: break-word; color: var(--text); font-size: 14px; line-height: 1.6; }
+
+.field{ margin-bottom:12px; }
+.label{ font-size:14px; font-weight:700; margin-bottom:6px; }
+.row{ display:flex; gap:10px; align-items:center; }
+.row input{ width:220px; border:1px solid var(--border); border-radius:12px; padding:10px 12px; font-size:14px; outline:0; }
+.unit{ font-size:14px; color:var(--muted); }
+.btnPrimary{ border:0; background:var(--blue); color:#fff; padding:10px 14px; border-radius:12px; cursor:pointer; font-weight:700; }
+.pill{ border:1px solid var(--border); background:#fff; padding:8px 12px; border-radius:999px; cursor:pointer; font-size:14px; }
+.pillActive{ border-color:var(--blue); color:var(--blue); font-weight:700; }
+.kitTable{ border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+.kitHead,.kitRow{ display:grid; grid-template-columns:1fr 120px; gap:10px; padding:10px 12px; }
+.kitHead{ background:#f3f4f6; font-weight:800; color:var(--text); }
+.kitRow{ border-top:1px solid var(--border); }
+
+/* Modern back button */
+.backBtnModern {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+
+  background: transparent;
+  border: none;
+
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+
+  padding: 6px 4px;
+  cursor: pointer;
+
+  transition: all 0.2s ease;
+}
+
+.backBtnModern:hover {
+  color: #1a73e8;
+  transform: translateX(-2px);
+}
+
+.backBtnModern svg {
+  transition: transform 0.2s ease;
+}
+
+.backBtnModern:hover svg {
+  transform: translateX(-3px);
+}
+
+.backLabelModern {
+  letter-spacing: 0.3px;
+}

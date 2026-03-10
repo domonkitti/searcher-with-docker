@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-web
+  namespace: searchable-from-book
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search-web
+  template:
+    metadata:
+      labels:
+        app: search-web
+    spec:
+      serviceAccountName: search-web-sa
+      containers:
+        - name: web
+          image: YOUR_REGISTRY/search-web:TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_BASE
+              value: ""
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 20

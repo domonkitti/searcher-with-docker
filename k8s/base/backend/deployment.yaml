@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-api
+  namespace: searchable-from-book
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: search-api
+  template:
+    metadata:
+      labels:
+        app: search-api
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "search-backend"
+        vault.hashicorp.com/agent-pre-populate-only: "true"
+        vault.hashicorp.com/agent-inject-secret-backend-env: "kv/data/searchable-from-book/backend"
+        vault.hashicorp.com/agent-inject-template-backend-env: |
+          {{- with secret "kv/data/searchable-from-book/backend" -}}
+          export DATABASE_URL="{{ .Data.data.DATABASE_URL }}"
+          {{- end }}
+    spec:
+      serviceAccountName: search-api-sa
+      containers:
+        - name: api
+          image: YOUR_REGISTRY/search-api:TAG
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: search-config
+          readinessProbe:
+            httpGet:
+              path: /api/ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /api/live
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 20

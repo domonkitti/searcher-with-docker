@@ -1,0 +1,61 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: search-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: searchdb
+      POSTGRES_USER: search_user
+      POSTGRES_PASSWORD: search_pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U search_user -d searchdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+    container_name: search-api-dev
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env.dev
+    environment:
+      ADDR: :8080
+      ALLOW_ORIGINS: http://localhost:3000
+
+      # ใช้ DB แทน xlsx
+      DATABASE_URL: postgres://search_user:search_pass@postgres:5432/searchdb?sslmode=disable
+
+      # ยังใช้ json ต่อ
+      RULES_JSON: /data/rules.json
+      SYNONYMS_JSON: /data/synonyms.json
+    volumes:
+      - ./backend/data/rules.json:/data/rules.json:ro
+      - ./backend/data/synonyms.json:/data/synonyms.json:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+    container_name: search-web-dev
+    restart: unless-stopped
+    env_file:
+      - ./frontend/.env.dev
+    environment:
+      NEXT_PUBLIC_API_BASE: http://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_dev_data:

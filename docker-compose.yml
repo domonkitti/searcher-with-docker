@@ -1,0 +1,31 @@
+services:
+  api:
+    build:
+      context: ./backend
+    environment:
+      - ADDR=:8080
+      - ALLOW_ORIGINS=http://localhost:3000
+      - ITEMS_XLSX=/data/items.xlsx
+      - KITS_XLSX=/data/kits.xlsx
+      - RULES_JSON=/data/rules.json
+      - SYNONYMS_JSON=/data/synonyms.json
+      - TITLE_BOOST=2
+      - MIN_SCORE=0.15
+      - NGRAM_MIN=2
+      - NGRAM_MAX=3
+      - REQUEST_TIMEOUT_MS=8000
+    volumes:
+      - ./backend/data:/data:ro
+    ports:
+      - "8080:8080"
+
+  web:
+    build:
+      context: ./frontend
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE=http://localhost:8080
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api

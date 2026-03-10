@@ -1,0 +1,14 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: search-web
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+        - name: web
+          image: YOUR_REGISTRY/search-web:prod
+          env:
+            - name: NEXT_PUBLIC_API_BASE
+              value: "/api"
