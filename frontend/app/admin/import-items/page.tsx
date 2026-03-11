@@ -34,7 +34,7 @@ function ImportCard({ title, note, endpoint }: ImportCardProps) {
         body: form,
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "นำเข้าไม่สำเร็จ");
+      if (!res.ok) throw new Error(data?.error || data?.detail || "นำเข้าไม่สำเร็จ");
       setMessage(`นำเข้าสำเร็จ ${data.inserted ?? 0} รายการ`);
     } catch (err: any) {
       setMessage(err?.message || "นำเข้าไม่สำเร็จ");
@@ -47,7 +47,11 @@ function ImportCard({ title, note, endpoint }: ImportCardProps) {
     <div className="result">
       <div className="title" style={{ fontSize: 20 }}>{title}</div>
       <div className="meta" style={{ marginTop: 8, marginBottom: 12 }}>{note}</div>
-      <input type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+      <input
+        type="file"
+        accept=".xlsx,.xls"
+        onChange={(e) => setFile(e.target.files?.[0] || null)}
+      />
       <div style={{ marginTop: 16 }}>
         <button id="btn" onClick={upload} disabled={loading}>
           {loading ? "กำลังนำเข้า..." : "อัปโหลดและนำเข้า"}
@@ -66,11 +70,20 @@ export default function ImportItemsPage() {
         นำเข้า<span>Excel เข้าระบบค้นหา</span>
       </div>
 
-      <section className="results" style={{ maxWidth: 820, margin: "24px auto", gap: 16 }}>
+      <section
+        className="results"
+        style={{ maxWidth: 820, margin: "24px auto", gap: 16 }}
+      >
         <ImportCard
           title="นำเข้ารายการหลัก"
-          note="ไฟล์ที่อัปโหลดจะลบข้อมูลรายการเดิมทั้งหมดในฐานข้อมูล แล้วแทนที่ด้วยข้อมูลใหม่จาก Excel"
+          note="ไฟล์รายการหลักจะลบข้อมูลรายการเดิมทั้งหมดในฐานข้อมูล แล้วแทนที่ด้วยข้อมูลใหม่จาก Excel โดยไฟล์นี้ต้องมีคอลัมน์ ID เป็นคอลัมน์แรก"
           endpoint="/api/admin/import/items"
+        />
+
+        <ImportCard
+          title="นำเข้าลิงก์ประกอบรายการ"
+          note="ไฟล์นี้ใช้จับคู่กับ ID ของไฟล์รายการหลัก โดยต้องมี 3 คอลัมน์คือ ID, realLink และ displayLine และควรนำเข้าหลังจากนำเข้ารายการหลักแล้ว"
+          endpoint="/api/admin/import/item-links"
         />
 
         <ImportCard

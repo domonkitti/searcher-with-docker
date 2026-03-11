@@ -7,6 +7,12 @@ import BackButton from "../../components/BackButton";
 
 const API = process.env.NEXT_PUBLIC_API_BASE || "";
 
+type LinkItem = {
+  realLink?: string;
+  displayLine?: string;
+  lineNo?: number;
+};
+
 type Doc = {
   id: string;
   title: string;
@@ -17,6 +23,11 @@ function esc(s: any) {
   return (s ?? "").toString();
 }
 
+function hasMeaningfulValue(v: any) {
+  const s = esc(v).trim();
+  return s !== "" && s !== "-" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined";
+}
+
 export default function DocDetailPage() {
   const params = useParams();
   const id = (params?.id as string) || "";
@@ -24,7 +35,6 @@ export default function DocDetailPage() {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // ---- group expand ----
   const [groupOpen, setGroupOpen] = useState(false);
   const [groupLoading, setGroupLoading] = useState(false);
   const [groupItems, setGroupItems] = useState<any[]>([]);
@@ -37,7 +47,6 @@ export default function DocDetailPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
         setDoc(d);
-        // reset group state when doc changes
         setGroupOpen(false);
         setGroupItems([]);
         setGroupLoading(false);
@@ -50,20 +59,28 @@ export default function DocDetailPage() {
   const catMain = esc(m.categoryMain || "-");
   const catSub = esc(m.categorySub || "");
   const groupName = esc(m.group || "");
+  const page = esc(m.page || "");
+  const row = esc(m.row || "");
+  const budgetUse = esc(m.budgetUse || "");
+  const emergency = esc(m.emergency || "");
+  const special = esc(m.special || "");
+
+  const links: LinkItem[] = Array.isArray(m.links) ? m.links : [];
+
+  const showPage = hasMeaningfulValue(page);
+  const showRow = hasMeaningfulValue(row);
+  const showReference = showPage || showRow;
 
   async function toggleGroup(main: string, sub: string, group: string) {
     if (!group) return;
 
-    // collapse
     if (groupOpen) {
       setGroupOpen(false);
       return;
     }
 
-    // expand: load if not loaded
     setGroupOpen(true);
 
-    // ถ้าเคยโหลดแล้ว ไม่ต้องยิงซ้ำ
     if (groupItems.length > 0) return;
 
     setGroupLoading(true);
@@ -86,7 +103,6 @@ export default function DocDetailPage() {
       <Navbar />
       <BackButton />
       <div className="card">
-
         {loading && (
           <div className="small" style={{ marginTop: 10 }}>
             กำลังโหลด…
@@ -105,7 +121,6 @@ export default function DocDetailPage() {
               {esc(doc.title)}
             </div>
 
-            {/* หมวด/หมวดย่อย (ไม่คลิก) */}
             <div className="small" style={{ marginTop: 8 }}>
               <div>
                 <b>หมวด:</b> {catMain}
@@ -117,7 +132,6 @@ export default function DocDetailPage() {
                 </div>
               )}
 
-              {/* กลุ่มรายการ (กดดูรายการ) */}
               {!!groupName.trim() && (
                 <div style={{ marginTop: 6 }}>
                   <b>กลุ่มรายการ:</b> {groupName}{" "}
@@ -168,30 +182,64 @@ export default function DocDetailPage() {
               )}
             </div>
 
-            <div className="small" style={{ marginTop: 6 }}>
-              <b>อ้างอิง:</b> หน้า {esc(m.page || "-")} ลำดับ {esc(m.row || "-")}
-            </div>
-
-            {!!esc(m.budgetUse).trim() && (
+            {showReference && (
               <div className="small" style={{ marginTop: 6 }}>
-                <b>การใช้งบ:</b> {esc(m.budgetUse)}
+                <b>อ้างอิง:</b>{" "}
+                {showPage && <>หน้า {page}</>}
+                {showPage && showRow && " "}
+                {showRow && <>ลำดับ {row}</>}
               </div>
             )}
 
-            {!!esc(m.emergency).trim() && (
+            {!!budgetUse.trim() && (
+              <div className="small" style={{ marginTop: 6 }}>
+                <b>การใช้งบ:</b> {budgetUse}
+              </div>
+            )}
+
+            {!!emergency.trim() && (
               <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>
-                <b>ครุภัณฑ์ที่ให้ส่วนภูมิภาคเป็นผู้อนุมัติหลักการฯ:</b> {esc(m.emergency)}
+                <b>อำนาจอนุมัติ:</b> {emergency}
               </div>
             )}
 
-            {!!esc(m.special).trim() && (
+            {!!special.trim() && (
               <div className="card" style={{ marginTop: 12 }}>
                 <div className="small">
                   <b>หมายเหตุ</b>
                 </div>
                 <div className="small" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
-                  {esc(m.special)}
+                  {special}
                 </div>
+              </div>
+            )}
+
+            {links.length > 0 && (
+              <div className="card" style={{ marginTop: 12 }}>
+                <div className="small">
+                  <b>ลิงก์ที่เกี่ยวข้อง</b>
+                </div>
+
+                <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+                  {links.map((link, idx) => {
+                    const href = esc(link.realLink).trim();
+                    const label = esc(link.displayLine).trim();
+
+                    if (!href || !label) return null;
+
+                    return (
+                      <li key={`${href}-${idx}`} style={{ marginTop: 6 }}>
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {label}
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
             )}
           </>

@@ -10,35 +10,35 @@ import (
 
 // ---------------- EXCEL UPDATE GUIDE ----------------
 //
-// This loader expects these columns (0-index):
-//   A: หมวด (categoryMain)
-//   B: หมวดย่อย (categorySub)
-//   C: กลุ่มรายการ (group)
-//   D: รายการ (title)              <-- required (empty rows are skipped)
-//   E: หน้า (page)
-//   F: ลำดับ (row/order)
-//   G: เงื่อนไขพิเศษ (special)
-//   H: การใช้งบ (budgetUse)
-//   I: (emergency) คอลัมน์ใหม่/ข้อความยาว (optional)
+// Main items loader expects these columns (0-index):
 //
-// ✅ You can add NEW rows freely (append at the bottom) — no code change needed.
-// ⚠️ If you INSERT/REORDER columns, update the Col* constants below to match.
+//	A: ID (source_id)
+//	B: หมวด (categoryMain)
+//	C: หมวดย่อย (categorySub)
+//	D: กลุ่มรายการ (group)
+//	E: รายการ (title)              <-- required (empty rows are skipped)
+//	F: หน้า (page)
+//	G: ลำดับ (row/order)
+//	H: เงื่อนไขพิเศษ (special)
+//	I: การใช้งบ (budgetUse)
+//	J: (emergency) คอลัมน์ใหม่/ข้อความยาว (optional)
+//
 // -----------------------------------------------------
-// Column mapping for data.xlsx (0-index): A=0, B=1, ...
 const (
-	ColCategoryMain = 0 // A หมวด
-	ColCategorySub  = 1 // B หมวดย่อย
-	ColGroup        = 2 // C กลุ่มรายการ
-	ColTitle        = 3 // D รายการ
-	ColPage         = 4 // E หน้า
-	ColOrder        = 5 // F ลำดับ
-	ColSpecial      = 6 // G เงื่อนไขพิเศษ
-	ColBudgetUse    = 7 // H การใช้งบ
-	ColEmergency    = 8 // I คอลัมน์ใหม่ (ยาวๆ)
+	ColSourceID     = 0 // A ID
+	ColCategoryMain = 1 // B หมวด
+	ColCategorySub  = 2 // C หมวดย่อย
+	ColGroup        = 3 // D กลุ่มรายการ
+	ColTitle        = 4 // E รายการ
+	ColPage         = 5 // F หน้า
+	ColOrder        = 6 // G ลำดับ
+	ColSpecial      = 7 // H เงื่อนไขพิเศษ
+	ColBudgetUse    = 8 // I การใช้งบ
+	ColEmergency    = 9 // J คอลัมน์ใหม่ (ยาวๆ)
 )
 
 var headerKeywords = []string{
-	"หมวด", "หมวดย่อย", "กลุ่มรายการ", "รายการ", "หน้า", "ลำดับ",
+	"id", "หมวด", "หมวดย่อย", "กลุ่มรายการ", "รายการ", "หน้า", "ลำดับ",
 	"เงื่อนไข", "การใช้งบ", "ครุภัณฑ์", "อำนาจ",
 	"category", "group", "title", "page", "order",
 }
@@ -81,6 +81,19 @@ func nonEmpty(xs []string) []string {
 	return out
 }
 
+type ItemExcelRow struct {
+	SourceID     string
+	CategoryMain string
+	CategorySub  string
+	GroupName    string
+	Title        string
+	Page         string
+	OrderNo      string
+	Special      string
+	BudgetUse    string
+	Emergency    string
+}
+
 // LoadDocsFromExcel reads ALL sheets from Excel. Each non-empty row becomes 1 doc.
 func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
 	if _, err := os.Stat(path); err != nil {
@@ -105,7 +118,6 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
 		}
 
 		for rIdx, row := range rows {
-			// Skip header if first row looks like header
 			if rIdx == 0 && looksLikeHeader(row) {
 				continue
 			}
@@ -115,6 +127,7 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
 				continue
 			}
 
+			sourceID := getCol(row, ColSourceID)
 			catMain := getCol(row, ColCategoryMain)
 			catSub := getCol(row, ColCategorySub)
 			group := getCol(row, ColGroup)
@@ -129,10 +142,11 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
 			fullText := fmt.Sprintf("%s| %s", boosted, joined)
 
 			counter++
-			id := fmt.Sprintf("%d", counter) // ✅ URL-safe ID
+			id := fmt.Sprintf("%d", counter)
 
 			meta := map[string]any{
 				"source":       "excel",
+				"sourceId":     strings.TrimSpace(sourceID),
 				"categoryMain": defaultDash(catMain),
 				"categorySub":  strings.TrimSpace(catSub),
 				"group":        strings.TrimSpace(group),
@@ -153,4 +167,29 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
 	}
 
 	return docs, nil
+}
+
+func LoadItemsFromExcelFile(path string) ([]ItemExcelRow, error) {
+	docs, err := LoadDocsFromExcel(path, 1)
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]ItemExcelRow, 0, len(docs))
+	for _, d := range docs {
+		meta := d.Meta
+		out = append(out, ItemExcelRow{
+			SourceID:     strings.TrimSpace(toStr(meta["sourceId"])),
+			CategoryMain: strings.TrimSpace(toStr(meta["categoryMain"])),
+			CategorySub:  strings.TrimSpace(toStr(meta["categorySub"])),
+			GroupName:    strings.TrimSpace(toStr(meta["group"])),
+			Title:        strings.TrimSpace(d.Title),
+			Page:         strings.TrimSpace(toStr(meta["page"])),
+			OrderNo:      strings.TrimSpace(toStr(meta["row"])),
+			Special:      strings.TrimSpace(toStr(meta["special"])),
+			BudgetUse:    strings.TrimSpace(toStr(meta["budgetUse"])),
+			Emergency:    strings.TrimSpace(toStr(meta["emergency"])),
+		})
+	}
+	return out, nil
 }

@@ -12,6 +12,11 @@ function esc(s: any) {
   return (s ?? "").toString();
 }
 
+function hasMeaningfulValue(v: any) {
+  const s = (v ?? "").toString().trim();
+  return s !== "" && s !== "-" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined";
+}
+
 export default function HomeClient() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<SearchResult[]>([]);
@@ -104,9 +109,15 @@ export default function HomeClient() {
                 <div>หมวด: {categoryMain}</div>
                 {!!categorySub.trim() && <div>หมวดย่อย: {categorySub}</div>}
                 {!!group.trim() && <div>กลุ่มรายการ: {group}</div>}
-                <div>
-                  อ้างอิง: หน้า {page} ลำดับ {row} | score={score}
-                </div>
+
+                {(hasMeaningfulValue(page) || hasMeaningfulValue(row) || hasMeaningfulValue(score)) && (
+                  <div>
+                    อ้างอิง:
+                    {hasMeaningfulValue(page) && <> หน้า {page}</>}
+                    {hasMeaningfulValue(row) && <> ลำดับ {row}</>}
+                    {hasMeaningfulValue(score) && <> | score={score}</>}
+                  </div>
+                )}
               </div>
             </div>
           );
