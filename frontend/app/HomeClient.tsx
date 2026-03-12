@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Navbar from "./components/Navbar";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const API = process.env.NEXT_PUBLIC_API_BASE || "";
 
 type SearchResult = { id: string; title: string; score: number; meta: any };
+type SuggestItem = { text: string; score: number };
 
 function esc(s: any) {
   return (s ?? "").toString();
@@ -21,8 +22,20 @@ export default function HomeClient() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<SearchResult[]>([]);
   const [done, setDone] = useState(false);
+
+  const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
+  const [activeSuggest, setActiveSuggest] = useState(-1);
+  const [isSuggestOpen, setIsSuggestOpen] = useState(false);
+
   const router = useRouter();
   const searchParams = useSearchParams();
+
+  const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+
+  // สำคัญ: กันไม่ให้ runSuggest ยิงซ้ำหลังจากเลือก suggestion
+  const suppressSuggestRef = useRef(false);
 
   async function runSearch(term: string) {
     setDone(false);
@@ -32,11 +45,42 @@ export default function HomeClient() {
     setDone(true);
   }
 
-  async function search() {
-    const term = q.trim();
+  async function runSuggest(term: string) {
+    const clean = term.trim();
+
+    if (!clean) {
+      setSuggestions([]);
+      setActiveSuggest(-1);
+      setIsSuggestOpen(false);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API}/api/suggest?q=${encodeURIComponent(clean)}&k=8`);
+      const data = await res.json();
+      const nextItems = data.items || [];
+
+      setSuggestions(nextItems);
+      setActiveSuggest(-1);
+      setIsSuggestOpen(nextItems.length > 0);
+    } catch {
+      setSuggestions([]);
+      setActiveSuggest(-1);
+      setIsSuggestOpen(false);
+    }
+  }
+
+  async function search(termArg?: string) {
+    const term = (termArg ?? q).trim();
     if (!term) return;
 
+    setQ(term);
+    setSuggestions([]);
+    setActiveSuggest(-1);
+    setIsSuggestOpen(false);
+
     await runSearch(term);
+
     try {
       const url = new URL(window.location.href);
       url.searchParams.set("q", term);
@@ -47,10 +91,57 @@ export default function HomeClient() {
   useEffect(() => {
     const initial = searchParams.get("q") || "";
     if (!initial) return;
+
     setQ(initial);
     runSearch(initial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+
+    // ถ้าพึ่งเลือกจาก suggestion มา ไม่ต้องยิง suggest ซ้ำ
+    if (suppressSuggestRef.current) {
+      suppressSuggestRef.current = false;
+      return;
+    }
+
+    suggestTimer.current = setTimeout(() => {
+      runSuggest(q);
+    }, 180);
+
+    return () => {
+      if (suggestTimer.current) clearTimeout(suggestTimer.current);
+    };
+  }, [q]);
+
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      const target = e.target as Node | null;
+      if (!boxRef.current || !target) return;
+
+      if (!boxRef.current.contains(target)) {
+        setIsSuggestOpen(false);
+        setActiveSuggest(-1);
+      }
+    }
+
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => {
+      document.removeEventListener("mousedown", handleOutsideClick);
+    };
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (suggestTimer.current) clearTimeout(suggestTimer.current);
+      if (blurTimer.current) clearTimeout(blurTimer.current);
+    };
+  }, []);
+
+  const showSuggest = useMemo(() => {
+    return isSuggestOpen && q.trim().length > 0 && suggestions.length > 0;
+  }, [isSuggestOpen, q, suggestions]);
 
   return (
     <main className="wrap">
@@ -60,21 +151,116 @@ export default function HomeClient() {
         ค้นหา<span>รายการในหนังสือจำแนก</span>
       </div>
 
-      <div className="searchBox">
+      <div className="searchBox" style={{ position: "relative" }} ref={boxRef}>
         <input
           id="q"
           type="text"
           placeholder="พิมพ์เพื่อค้นหา…"
           autoComplete="off"
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onFocus={() => {
+            if (blurTimer.current) clearTimeout(blurTimer.current);
+            if (suggestions.length > 0) {
+              setIsSuggestOpen(true);
+            }
+          }}
+          onBlur={() => {
+            if (blurTimer.current) clearTimeout(blurTimer.current);
+            blurTimer.current = setTimeout(() => {
+              setIsSuggestOpen(false);
+              setActiveSuggest(-1);
+            }, 120);
+          }}
+          onChange={(e) => {
+            suppressSuggestRef.current = false;
+            setQ(e.target.value);
+            setIsSuggestOpen(true);
+          }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") search();
+            if (e.key === "ArrowDown") {
+              e.preventDefault();
+              setIsSuggestOpen(true);
+              setActiveSuggest((prev) => Math.min(prev + 1, suggestions.length - 1));
+              return;
+            }
+
+            if (e.key === "ArrowUp") {
+              e.preventDefault();
+              setActiveSuggest((prev) => Math.max(prev - 1, -1));
+              return;
+            }
+
+            if (e.key === "Enter") {
+              e.preventDefault();
+
+              if (activeSuggest >= 0 && suggestions[activeSuggest]) {
+                suppressSuggestRef.current = true;
+                search(suggestions[activeSuggest].text);
+              } else {
+                search();
+              }
+              return;
+            }
+
+            if (e.key === "Escape") {
+              setSuggestions([]);
+              setActiveSuggest(-1);
+              setIsSuggestOpen(false);
+            }
           }}
         />
-        <button id="btn" onClick={search}>
+
+        <button id="btn" onClick={() => search()}>
           ค้นหา
         </button>
+
+        {showSuggest && (
+          <div
+            style={{
+              position: "absolute",
+              top: "100%",
+              left: 0,
+              right: 0,
+              background: "white",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              marginTop: 8,
+              boxShadow: "0 10px 30px rgba(0,0,0,0.08)",
+              zIndex: 30,
+              overflow: "hidden",
+            }}
+          >
+            {suggestions.map((item, idx) => (
+              <button
+                key={`${item.text}-${idx}`}
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  suppressSuggestRef.current = true;
+                }}
+                onClick={() => {
+                  setSuggestions([]);
+                  setActiveSuggest(-1);
+                  setIsSuggestOpen(false);
+                  search(item.text);
+                }}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  textAlign: "left",
+                  padding: "12px 14px",
+                  border: "none",
+                  cursor: "pointer",
+                  background: idx === activeSuggest ? "#f3f4f6" : "white",
+                  color: "#111827",
+                  fontSize: 16,
+                }}
+              >
+                {item.text}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="topLinks">

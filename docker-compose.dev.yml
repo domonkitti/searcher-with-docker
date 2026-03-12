@@ -42,14 +42,16 @@ services:
       # ยังใช้ json ต่อ
       RULES_JSON: /data/rules.json
       SYNONYMS_JSON: /data/synonyms.json
+      TRANSLIT_TSV: /data/dict.tsv
 
-      # เพิ่ม 2 ตัวนี้
+
       EMBEDDER_URL: http://embedder:8000
       EMBEDDER_TIMEOUT_MS: 10000
 
     volumes:
       - ./backend/data/rules.json:/data/rules.json:ro
       - ./backend/data/synonyms.json:/data/synonyms.json:ro
+      - ./backend/data/dict.tsv:/data/dict.tsv:ro
     ports:
       - "8080:8080"
     depends_on:

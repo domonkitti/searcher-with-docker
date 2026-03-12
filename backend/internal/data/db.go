@@ -1,4 +1,4 @@
-package internal
+package data
 
 import (
 	"context"
@@ -49,12 +49,16 @@ CREATE TABLE IF NOT EXISTS items (
     special TEXT,
     budget_use TEXT,
     emergency TEXT,
+    approval_condition TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 ALTER TABLE items
 ADD COLUMN IF NOT EXISTS source_id TEXT;
+
+ALTER TABLE items
+ADD COLUMN IF NOT EXISTS approval_condition TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_id
 ON items(source_id);

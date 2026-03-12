@@ -1,4 +1,4 @@
-package internal
+package data
 
 import (
 	"context"
@@ -6,20 +6,23 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	"demosearch/internal/search"
 )
 
 type Item struct {
-	ID           int64
-	SourceID     string
-	CategoryMain string
-	CategorySub  string
-	GroupName    string
-	Title        string
-	Page         string
-	OrderNo      string
-	Special      string
-	BudgetUse    string
-	Emergency    string
+	ID                int64
+	SourceID          string
+	CategoryMain      string
+	CategorySub       string
+	GroupName         string
+	Title             string
+	Page              string
+	OrderNo           string
+	Special           string
+	BudgetUse         string
+	Emergency         string
+	ApprovalCondition string
 }
 
 type ItemLink struct {
@@ -39,16 +42,17 @@ func LoadItemsFromExcel(path string) ([]Item, error) {
 	out := make([]Item, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, Item{
-			SourceID:     strings.TrimSpace(r.SourceID),
-			CategoryMain: strings.TrimSpace(r.CategoryMain),
-			CategorySub:  strings.TrimSpace(r.CategorySub),
-			GroupName:    strings.TrimSpace(r.GroupName),
-			Title:        strings.TrimSpace(r.Title),
-			Page:         strings.TrimSpace(r.Page),
-			OrderNo:      strings.TrimSpace(r.OrderNo),
-			Special:      strings.TrimSpace(r.Special),
-			BudgetUse:    strings.TrimSpace(r.BudgetUse),
-			Emergency:    strings.TrimSpace(r.Emergency),
+			SourceID:          strings.TrimSpace(r.SourceID),
+			CategoryMain:      strings.TrimSpace(r.CategoryMain),
+			CategorySub:       strings.TrimSpace(r.CategorySub),
+			GroupName:         strings.TrimSpace(r.GroupName),
+			Title:             strings.TrimSpace(r.Title),
+			Page:              strings.TrimSpace(r.Page),
+			OrderNo:           strings.TrimSpace(r.OrderNo),
+			Special:           strings.TrimSpace(r.Special),
+			BudgetUse:         strings.TrimSpace(r.BudgetUse),
+			Emergency:         strings.TrimSpace(r.Emergency),
+			ApprovalCondition: strings.TrimSpace(r.ApprovalCondition),
 		})
 	}
 	return out, nil
@@ -71,8 +75,8 @@ func ReplaceAllItems(ctx context.Context, db *sql.DB, items []Item) error {
 
 	stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO items (
-    source_id, category_main, category_sub, group_name, title, page, order_no, special, budget_use, emergency
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`)
+    source_id, category_main, category_sub, group_name, title, page, order_no, special, budget_use, emergency, approval_condition
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`)
 	if err != nil {
 		return err
 	}
@@ -93,6 +97,7 @@ INSERT INTO items (
 			nullIfBlank(it.Special),
 			nullIfBlank(it.BudgetUse),
 			nullIfBlank(it.Emergency),
+			nullIfBlank(it.ApprovalCondition),
 		); err != nil {
 			return err
 		}
@@ -148,7 +153,18 @@ WHERE i.source_id = $1`)
 
 func LoadAllItems(ctx context.Context, db *sql.DB) ([]Item, error) {
 	rows, err := db.QueryContext(ctx, `
-SELECT id, COALESCE(source_id, ''), COALESCE(category_main, ''), COALESCE(category_sub, ''), COALESCE(group_name, ''), COALESCE(title, ''), COALESCE(page, ''), COALESCE(order_no, ''), COALESCE(special, ''), COALESCE(budget_use, ''), COALESCE(emergency, '')
+SELECT id,
+       COALESCE(source_id, ''),
+       COALESCE(category_main, ''),
+       COALESCE(category_sub, ''),
+       COALESCE(group_name, ''),
+       COALESCE(title, ''),
+       COALESCE(page, ''),
+       COALESCE(order_no, ''),
+       COALESCE(special, ''),
+       COALESCE(budget_use, ''),
+       COALESCE(emergency, ''),
+       COALESCE(approval_condition, '')
 FROM items
 ORDER BY id ASC`)
 	if err != nil {
@@ -171,6 +187,7 @@ ORDER BY id ASC`)
 			&it.Special,
 			&it.BudgetUse,
 			&it.Emergency,
+			&it.ApprovalCondition,
 		); err != nil {
 			return nil, err
 		}
@@ -206,7 +223,7 @@ ORDER BY item_id ASC, line_no ASC, id ASC`)
 	return out, rows.Err()
 }
 
-func LoadDocsFromDB(ctx context.Context, db *sql.DB, titleBoost int) ([]Doc, error) {
+func LoadDocsFromDB(ctx context.Context, db *sql.DB, titleBoost int) ([]search.Doc, error) {
 	items, err := LoadAllItems(ctx, db)
 	if err != nil {
 		return nil, err
@@ -217,25 +234,26 @@ func LoadDocsFromDB(ctx context.Context, db *sql.DB, titleBoost int) ([]Doc, err
 		return nil, err
 	}
 
-	docs := make([]Doc, 0, len(items))
+	docs := make([]search.Doc, 0, len(items))
 	for _, it := range items {
 		boosted := strings.TrimSpace(strings.Repeat(it.Title+" ", titleBoost))
-		docs = append(docs, Doc{
+		docs = append(docs, search.Doc{
 			ID:    strconv.FormatInt(it.ID, 10),
 			Title: it.Title,
 			Text:  boosted,
 			Meta: map[string]any{
-				"source":       "postgres",
-				"sourceId":     strings.TrimSpace(it.SourceID),
-				"categoryMain": defaultDash(it.CategoryMain),
-				"categorySub":  strings.TrimSpace(it.CategorySub),
-				"group":        strings.TrimSpace(it.GroupName),
-				"page":         defaultDash(it.Page),
-				"row":          defaultDash(it.OrderNo),
-				"budgetUse":    strings.TrimSpace(it.BudgetUse),
-				"emergency":    strings.ReplaceAll(strings.ReplaceAll(it.Emergency, "\r\n", "\n"), "\r", "\n"),
-				"special":      strings.ReplaceAll(strings.ReplaceAll(it.Special, "\r\n", "\n"), "\r", "\n"),
-				"links":        linksMap[it.ID],
+				"source":            "postgres",
+				"sourceId":          strings.TrimSpace(it.SourceID),
+				"categoryMain":      defaultDash(it.CategoryMain),
+				"categorySub":       strings.TrimSpace(it.CategorySub),
+				"group":             strings.TrimSpace(it.GroupName),
+				"page":              defaultDash(it.Page),
+				"row":               defaultDash(it.OrderNo),
+				"budgetUse":         strings.TrimSpace(it.BudgetUse),
+				"emergency":         strings.ReplaceAll(strings.ReplaceAll(it.Emergency, "\r\n", "\n"), "\r", "\n"),
+				"special":           strings.ReplaceAll(strings.ReplaceAll(it.Special, "\r\n", "\n"), "\r", "\n"),
+				"approvalCondition": strings.ReplaceAll(strings.ReplaceAll(it.ApprovalCondition, "\r\n", "\n"), "\r", "\n"),
+				"links":             linksMap[it.ID],
 			},
 		})
 	}
@@ -264,11 +282,11 @@ func SaveUploadedItemLinksExcelAndImport(ctx context.Context, db *sql.DB, tempFi
 	return len(links), nil
 }
 
-func MustBuildDocsOrEmpty(ctx context.Context, db *sql.DB, titleBoost int) []Doc {
+func MustBuildDocsOrEmpty(ctx context.Context, db *sql.DB, titleBoost int) []search.Doc {
 	docs, err := LoadDocsFromDB(ctx, db, titleBoost)
 	if err != nil {
 		fmt.Println("load docs from db error:", err)
-		return []Doc{}
+		return []search.Doc{}
 	}
 	return docs
 }

@@ -1,4 +1,4 @@
-package internal
+package data
 
 import (
 	"fmt"
@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/xuri/excelize/v2"
+
+	"demosearch/internal/search"
 )
 
 // ---------------- EXCEL UPDATE GUIDE ----------------
@@ -21,25 +23,27 @@ import (
 //	G: ลำดับ (row/order)
 //	H: เงื่อนไขพิเศษ (special)
 //	I: การใช้งบ (budgetUse)
-//	J: (emergency) คอลัมน์ใหม่/ข้อความยาว (optional)
+//	J: อำนาจอนุมัติ / ข้อความยาว (emergency) (optional)
+//	K: เงื่อนไขการอนุมัติ (approvalCondition) (optional)
 //
 // -----------------------------------------------------
 const (
-	ColSourceID     = 0 // A ID
-	ColCategoryMain = 1 // B หมวด
-	ColCategorySub  = 2 // C หมวดย่อย
-	ColGroup        = 3 // D กลุ่มรายการ
-	ColTitle        = 4 // E รายการ
-	ColPage         = 5 // F หน้า
-	ColOrder        = 6 // G ลำดับ
-	ColSpecial      = 7 // H เงื่อนไขพิเศษ
-	ColBudgetUse    = 8 // I การใช้งบ
-	ColEmergency    = 9 // J คอลัมน์ใหม่ (ยาวๆ)
+	ColSourceID         = 0  // A ID
+	ColCategoryMain     = 1  // B หมวด
+	ColCategorySub      = 2  // C หมวดย่อย
+	ColGroup            = 3  // D กลุ่มรายการ
+	ColTitle            = 4  // E รายการ
+	ColPage             = 5  // F หน้า
+	ColOrder            = 6  // G ลำดับ
+	ColSpecial          = 7  // H เงื่อนไขพิเศษ
+	ColBudgetUse        = 8  // I การใช้งบ
+	ColEmergency        = 9  // J อำนาจอนุมัติ / ข้อความยาว
+	ColApprovalCond     = 10 // K เงื่อนไขการอนุมัติ
 )
 
 var headerKeywords = []string{
 	"id", "หมวด", "หมวดย่อย", "กลุ่มรายการ", "รายการ", "หน้า", "ลำดับ",
-	"เงื่อนไข", "การใช้งบ", "ครุภัณฑ์", "อำนาจ",
+	"เงื่อนไข", "การใช้งบ", "ครุภัณฑ์", "อำนาจ", "อนุมัติ",
 	"category", "group", "title", "page", "order",
 }
 
@@ -82,20 +86,21 @@ func nonEmpty(xs []string) []string {
 }
 
 type ItemExcelRow struct {
-	SourceID     string
-	CategoryMain string
-	CategorySub  string
-	GroupName    string
-	Title        string
-	Page         string
-	OrderNo      string
-	Special      string
-	BudgetUse    string
-	Emergency    string
+	SourceID          string
+	CategoryMain      string
+	CategorySub       string
+	GroupName         string
+	Title             string
+	Page              string
+	OrderNo           string
+	Special           string
+	BudgetUse         string
+	Emergency         string
+	ApprovalCondition string
 }
 
 // LoadDocsFromExcel reads ALL sheets from Excel. Each non-empty row becomes 1 doc.
-func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
+func LoadDocsFromExcel(path string, titleBoost int) ([]search.Doc, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, err
 	}
@@ -107,7 +112,7 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
 	defer func() { _ = f.Close() }()
 
 	sheets := f.GetSheetList()
-	docs := make([]Doc, 0, 2048)
+	docs := make([]search.Doc, 0, 2048)
 
 	counter := 0
 
@@ -136,6 +141,7 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
 			special := getCol(row, ColSpecial)
 			budgetUse := getCol(row, ColBudgetUse)
 			emergency := getCol(row, ColEmergency)
+			approvalCond := getCol(row, ColApprovalCond)
 
 			joined := strings.Join(nonEmpty(row), " | ")
 			boosted := strings.TrimSpace(strings.Repeat(title+" ", titleBoost))
@@ -145,19 +151,20 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]Doc, error) {
 			id := fmt.Sprintf("%d", counter)
 
 			meta := map[string]any{
-				"source":       "excel",
-				"sourceId":     strings.TrimSpace(sourceID),
-				"categoryMain": defaultDash(catMain),
-				"categorySub":  strings.TrimSpace(catSub),
-				"group":        strings.TrimSpace(group),
-				"page":         defaultDash(page),
-				"row":          defaultDash(orderNo),
-				"budgetUse":    strings.TrimSpace(budgetUse),
-				"emergency":    strings.ReplaceAll(strings.ReplaceAll(emergency, "\r\n", "\n"), "\r", "\n"),
-				"special":      strings.ReplaceAll(strings.ReplaceAll(special, "\r\n", "\n"), "\r", "\n"),
+				"source":              "excel",
+				"sourceId":            strings.TrimSpace(sourceID),
+				"categoryMain":        defaultDash(catMain),
+				"categorySub":         strings.TrimSpace(catSub),
+				"group":               strings.TrimSpace(group),
+				"page":                defaultDash(page),
+				"row":                 defaultDash(orderNo),
+				"budgetUse":           strings.TrimSpace(budgetUse),
+				"emergency":           strings.ReplaceAll(strings.ReplaceAll(emergency, "\r\n", "\n"), "\r", "\n"),
+				"special":             strings.ReplaceAll(strings.ReplaceAll(special, "\r\n", "\n"), "\r", "\n"),
+				"approvalCondition":   strings.ReplaceAll(strings.ReplaceAll(approvalCond, "\r\n", "\n"), "\r", "\n"),
 			}
 
-			docs = append(docs, Doc{
+			docs = append(docs, search.Doc{
 				ID:    id,
 				Title: title,
 				Text:  fullText,
@@ -179,17 +186,30 @@ func LoadItemsFromExcelFile(path string) ([]ItemExcelRow, error) {
 	for _, d := range docs {
 		meta := d.Meta
 		out = append(out, ItemExcelRow{
-			SourceID:     strings.TrimSpace(toStr(meta["sourceId"])),
-			CategoryMain: strings.TrimSpace(toStr(meta["categoryMain"])),
-			CategorySub:  strings.TrimSpace(toStr(meta["categorySub"])),
-			GroupName:    strings.TrimSpace(toStr(meta["group"])),
-			Title:        strings.TrimSpace(d.Title),
-			Page:         strings.TrimSpace(toStr(meta["page"])),
-			OrderNo:      strings.TrimSpace(toStr(meta["row"])),
-			Special:      strings.TrimSpace(toStr(meta["special"])),
-			BudgetUse:    strings.TrimSpace(toStr(meta["budgetUse"])),
-			Emergency:    strings.TrimSpace(toStr(meta["emergency"])),
+			SourceID:          strings.TrimSpace(toStr(meta["sourceId"])),
+			CategoryMain:      strings.TrimSpace(toStr(meta["categoryMain"])),
+			CategorySub:       strings.TrimSpace(toStr(meta["categorySub"])),
+			GroupName:         strings.TrimSpace(toStr(meta["group"])),
+			Title:             strings.TrimSpace(d.Title),
+			Page:              strings.TrimSpace(toStr(meta["page"])),
+			OrderNo:           strings.TrimSpace(toStr(meta["row"])),
+			Special:           strings.TrimSpace(toStr(meta["special"])),
+			BudgetUse:         strings.TrimSpace(toStr(meta["budgetUse"])),
+			Emergency:         strings.TrimSpace(toStr(meta["emergency"])),
+			ApprovalCondition: strings.TrimSpace(toStr(meta["approvalCondition"])),
 		})
 	}
 	return out, nil
+}
+
+func toStr(v any) string {
+	if v == nil {
+		return ""
+	}
+	switch t := v.(type) {
+	case string:
+		return t
+	default:
+		return fmt.Sprint(t)
+	}
 }

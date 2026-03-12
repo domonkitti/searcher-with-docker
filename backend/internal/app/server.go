@@ -1,4 +1,4 @@
-package internal
+package app
 
 import (
 	"context"
@@ -16,6 +16,9 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"demosearch/internal/data"
+	"demosearch/internal/search"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -55,30 +58,30 @@ func getenvFloat(key string, def float64) float64 {
 
 type runtimeState struct {
 	mu      sync.RWMutex
-	docs    []Doc
-	kits    []KitDetail
-	ruleCfg RuleConfig
-	engine  *Engine
-	syn     *Synonyms
-	cfg     EngineConfig
+	docs    []search.Doc
+	kits    []data.KitDetail
+	ruleCfg data.RuleConfig
+	engine  *search.Engine
+	syn     *search.Synonyms
+	cfg     search.EngineConfig
 	db      *sql.DB
 
 	titleBoost int
-	embedder   Embedder
+	embedder   search.Embedder
 }
 
-func (s *runtimeState) snapshot() ([]Doc, []KitDetail, RuleConfig, *Engine) {
+func (s *runtimeState) snapshot() ([]search.Doc, []data.KitDetail, data.RuleConfig, *search.Engine) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.docs, s.kits, s.ruleCfg, s.engine
 }
 
 func (s *runtimeState) reloadEngineFromDB(ctx context.Context) error {
-	docs, err := LoadDocsFromDB(ctx, s.db, s.titleBoost)
+	docs, err := data.LoadDocsFromDB(ctx, s.db, s.titleBoost)
 	if err != nil {
 		return err
 	}
-	engine := NewEngine(docs, s.cfg, s.syn, s.embedder)
+	engine := search.NewEngine(docs, s.cfg, s.syn, s.embedder)
 
 	s.mu.Lock()
 	s.docs = docs
@@ -88,7 +91,7 @@ func (s *runtimeState) reloadEngineFromDB(ctx context.Context) error {
 }
 
 func (s *runtimeState) reloadKitsFromDB(ctx context.Context) error {
-	kits, err := LoadKitDetailsFromDB(ctx, s.db)
+	kits, err := data.LoadKitDetailsFromDB(ctx, s.db)
 	if err != nil {
 		return err
 	}
@@ -108,40 +111,44 @@ func RunServer() {
 	addr := getenvStr("ADDR", ":8080")
 	rulesPath := getenvStr("RULES_JSON", "data/rules.json")
 
-	db, err := OpenDB()
+	db, err := data.OpenDB()
 	if err != nil {
 		panic(err)
 	}
-	if err := EnsureSchema(db); err != nil {
+	if err := data.EnsureSchema(db); err != nil {
 		panic(err)
 	}
 
-	cfg := DefaultEngineConfig()
+	cfg := search.DefaultEngineConfig()
 	cfg.MinScore = minScore
 	cfg.NMin = nMin
 	cfg.NMax = nMax
+	cfg.WBm25Soft = getenvFloat("BM25_SOFT_WEIGHT", cfg.WBm25Soft)
+	cfg.WBm25 = getenvFloat("BM25_WEIGHT", cfg.WBm25)
+	cfg.WChr = getenvFloat("CHAR_WEIGHT", cfg.WChr)
+	cfg.WVec = getenvFloat("VEC_WEIGHT", cfg.WVec)
 
 	synPath := getenvStr("SYNONYMS_JSON", "data/synonyms.json")
-	var syn *Synonyms
-	if s, err := LoadSynonyms(synPath); err == nil {
+	var syn *search.Synonyms
+	if s, err := search.LoadSynonyms(synPath); err == nil {
 		syn = s
 	}
 
-	embedder := NewHTTPEmbedderFromEnv()
+	embedder := search.NewHTTPEmbedderFromEnv()
 
-	docs := MustBuildDocsOrEmpty(context.Background(), db, titleBoost)
-	kits, err := LoadKitDetailsFromDB(context.Background(), db)
+	docs := data.MustBuildDocsOrEmpty(context.Background(), db, titleBoost)
+	kits, err := data.LoadKitDetailsFromDB(context.Background(), db)
 	if err != nil {
 		fmt.Println("load kits from db error:", err)
-		kits = []KitDetail{}
+		kits = []data.KitDetail{}
 	}
-	ruleCfg := LoadRuleConfig(rulesPath)
+	ruleCfg := data.LoadRuleConfig(rulesPath)
 
 	state := &runtimeState{
 		docs:       docs,
 		kits:       kits,
 		ruleCfg:    ruleCfg,
-		engine:     NewEngine(docs, cfg, syn, embedder),
+		engine:     search.NewEngine(docs, cfg, syn, embedder),
 		syn:        syn,
 		cfg:        cfg,
 		db:         db,
@@ -174,10 +181,12 @@ func RunServer() {
 	r.GET("/api/health", func(c *gin.Context) {
 		docs, kits, _, engine := state.snapshot()
 		c.JSON(200, gin.H{
-			"ok":       true,
-			"docs":     len(docs),
-			"kits":     len(kits),
-			"minScore": engine.Cfg.MinScore,
+			"ok":             true,
+			"docs":           len(docs),
+			"kits":           len(kits),
+			"minScore":       engine.Cfg.MinScore,
+			"bm25Weight":     engine.Cfg.WBm25,
+			"bm25SoftWeight": engine.Cfg.WBm25Soft,
 		})
 	})
 
@@ -192,6 +201,19 @@ func RunServer() {
 		}
 		res := engine.Search(q, k)
 		c.JSON(200, gin.H{"query": q, "results": res})
+	})
+
+	r.GET("/api/suggest", func(c *gin.Context) {
+		_, _, _, engine := state.snapshot()
+		q := c.Query("q")
+		k := 8
+		if kk := c.Query("k"); kk != "" {
+			if n, err := strconv.Atoi(kk); err == nil && n >= 1 && n <= 20 {
+				k = n
+			}
+		}
+		items := engine.Suggest(q, k)
+		c.JSON(200, gin.H{"query": q, "items": items})
 	})
 
 	r.GET("/api/doc/:id", func(c *gin.Context) {
@@ -278,7 +300,7 @@ func RunServer() {
 	r.GET("/api/kits/:kitId", func(c *gin.Context) {
 		_, kits, _, _ := state.snapshot()
 		kitId := c.Param("kitId")
-		var found *KitDetail
+		var found *data.KitDetail
 		for i := range kits {
 			if kits[i].KitID == kitId {
 				found = &kits[i]
@@ -321,7 +343,7 @@ func RunServer() {
 			}
 		}
 
-		budget, allTrue, conditions := EvalRules(ruleCfg, inputs)
+		budget, allTrue, conditions := data.EvalRules(ruleCfg, inputs)
 		c.JSON(200, gin.H{
 			"budgetType": budget,
 			"allTrue":    allTrue,
@@ -344,7 +366,7 @@ func RunServer() {
 		}
 		defer os.Remove(tempFilePath)
 
-		inserted, err := SaveUploadedExcelAndImport(c.Request.Context(), db, tempFilePath)
+		inserted, err := data.SaveUploadedExcelAndImport(c.Request.Context(), db, tempFilePath)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
@@ -372,7 +394,7 @@ func RunServer() {
 		}
 		defer os.Remove(tempFilePath)
 
-		inserted, err := SaveUploadedItemLinksExcelAndImport(c.Request.Context(), db, tempFilePath)
+		inserted, err := data.SaveUploadedItemLinksExcelAndImport(c.Request.Context(), db, tempFilePath)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return
@@ -400,7 +422,7 @@ func RunServer() {
 		}
 		defer os.Remove(tempFilePath)
 
-		inserted, err := SaveUploadedKitsExcelAndImport(c.Request.Context(), db, tempFilePath)
+		inserted, err := data.SaveUploadedKitsExcelAndImport(c.Request.Context(), db, tempFilePath)
 		if err != nil {
 			c.JSON(500, gin.H{"error": err.Error()})
 			return

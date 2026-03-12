@@ -64,6 +64,7 @@ export default function DocDetailPage() {
   const budgetUse = esc(m.budgetUse || "");
   const emergency = esc(m.emergency || "");
   const special = esc(m.special || "");
+  const approvalCondition = esc(m.approvalCondition || "");
 
   const links: LinkItem[] = Array.isArray(m.links) ? m.links : [];
 
@@ -203,8 +204,17 @@ export default function DocDetailPage() {
               </div>
             )}
 
+            {!!approvalCondition.trim() && (
+              <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}>
+                <b>เงื่อนไขการอนุมัติ:</b>
+                <div className="small" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
+                  {approvalCondition}
+                </div>                
+              </div>
+            )}
+
             {!!special.trim() && (
-              <div className="card" style={{ marginTop: 12 }}>
+              <div style={{ marginTop: 12 }}>
                 <div className="small">
                   <b>หมายเหตุ</b>
                 </div>

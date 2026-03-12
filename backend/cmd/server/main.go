@@ -1,7 +1,7 @@
 package main
 
-import "demosearch/internal"
+import "demosearch/internal/app"
 
 func main() {
-	internal.RunServer()
+	app.RunServer()
 }

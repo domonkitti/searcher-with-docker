@@ -1,4 +1,4 @@
-package internal
+package search
 
 import (
 	"bytes"
@@ -29,6 +29,11 @@ type SearchResult struct {
 	Meta  map[string]any `json:"meta"`
 }
 
+type Suggestion struct {
+	Text  string  `json:"text"`
+	Score float64 `json:"score"`
+}
+
 type EngineConfig struct {
 	MinScore float64
 
@@ -37,8 +42,11 @@ type EngineConfig struct {
 	NMax int
 	WChr float64
 
-	// bm25
+	// exact token BM25
 	WBm25 float64
+
+	// soft Thai fragment BM25
+	WBm25Soft float64
 
 	// dense vector / semantic
 	WVec float64
@@ -47,6 +55,10 @@ type EngineConfig struct {
 	BoostTitleExact  float64
 	BoostTitlePhrase float64
 	BoostAllTokens   float64
+
+	// suggest
+	SuggestPrefixBoost float64
+	SuggestInfixBoost  float64
 }
 
 type Embedder interface {
@@ -77,15 +89,24 @@ type Engine struct {
 	DenseDocVecs [][]float64
 	Embedder     Embedder
 
-	// BM25 index
-	DocTokens []map[string]int
-	DocLen    []int
-	DF        map[string]int
-	N         int
-	AvgDL     float64
+	// transliteration dictionary
+	Translit *Transliterator
+
+	// exact BM25 index
+	DocExactTokens []map[string]int
+	DocExactLen    []int
+	ExactDF        map[string]int
+	AvgExactDL     float64
+
+	// soft BM25 index (Thai fragments + exact tokens)
+	DocSoftTokens []map[string]float64
+	DocSoftLen    []float64
+	SoftDF        map[string]int
+	AvgSoftDL     float64
+
+	N int
 
 	Cfg EngineConfig
-
 	Syn *Synonyms
 }
 
@@ -95,14 +116,18 @@ func DefaultEngineConfig() EngineConfig {
 
 		NMin: 3,
 		NMax: 6,
-		WChr: 0.25,
+		WChr: 0.15,
 
-		WBm25: 1.0,
-		WVec:  1.2,
+		WBm25:     1.35,
+		WBm25Soft: 0.90,
+		WVec:      0.45,
 
-		BoostTitleExact:  2.0,
-		BoostTitlePhrase: 0.8,
-		BoostAllTokens:   0.5,
+		BoostTitleExact:  1.8,
+		BoostTitlePhrase: 0.9,
+		BoostAllTokens:   0.8,
+
+		SuggestPrefixBoost: 5.0,
+		SuggestInfixBoost:  1.5,
 	}
 }
 
@@ -164,46 +189,71 @@ func (h *HTTPEmbedder) Embed(text string) ([]float64, error) {
 }
 
 func NewEngine(docs []Doc, cfg EngineConfig, syn *Synonyms, embedder Embedder) *Engine {
-	e := &Engine{
-		Docs:         docs,
-		ByID:         make(map[string]int, len(docs)),
-		ChrDocVecs:   make([]map[string]float64, 0, len(docs)),
-		DenseDocVecs: make([][]float64, 0, len(docs)),
-		DocTokens:    make([]map[string]int, 0, len(docs)),
-		DocLen:       make([]int, 0, len(docs)),
-		DF:           map[string]int{},
-		N:            len(docs),
-		Cfg:          cfg,
-		Syn:          syn,
-		Embedder:     embedder,
+	var translit *Transliterator
+	translitPath := strings.TrimSpace(os.Getenv("TRANSLIT_TSV"))
+	if translitPath != "" {
+		if tr, err := LoadTransliteratorTSV(translitPath); err == nil {
+			translit = tr
+		}
 	}
 
-	totalDL := 0
+	e := &Engine{
+		Docs:           docs,
+		ByID:           make(map[string]int, len(docs)),
+		ChrDocVecs:     make([]map[string]float64, 0, len(docs)),
+		DenseDocVecs:   make([][]float64, 0, len(docs)),
+		DocExactTokens: make([]map[string]int, 0, len(docs)),
+		DocExactLen:    make([]int, 0, len(docs)),
+		ExactDF:        map[string]int{},
+		DocSoftTokens:  make([]map[string]float64, 0, len(docs)),
+		DocSoftLen:     make([]float64, 0, len(docs)),
+		SoftDF:         map[string]int{},
+		N:              len(docs),
+		Cfg:            cfg,
+		Syn:            syn,
+		Embedder:       embedder,
+		Translit:       translit,
+	}
+
+	totalExactDL := 0
+	totalSoftDL := 0.0
 
 	for i, d := range docs {
 		e.ByID[d.ID] = i
-
 		lowerText := strings.ToLower(d.Text)
 
 		// 1) char n-gram vector
 		e.ChrDocVecs = append(e.ChrDocVecs, toTF(charNgrams(lowerText, cfg.NMin, cfg.NMax)))
 
-		// 2) BM25 tokens
-		toks := tokenize(lowerText)
+		// 2) analyzed tokens
+		az := analyzeDocText(lowerText)
 
-		tf := map[string]int{}
-		seen := map[string]bool{}
-		for _, t := range toks {
-			tf[t]++
-			if !seen[t] {
-				e.DF[t]++
-				seen[t] = true
+		exactTF := map[string]int{}
+		exactSeen := map[string]bool{}
+		for _, t := range az.Exact {
+			exactTF[t]++
+			if !exactSeen[t] {
+				e.ExactDF[t]++
+				exactSeen[t] = true
 			}
 		}
+		e.DocExactTokens = append(e.DocExactTokens, exactTF)
+		e.DocExactLen = append(e.DocExactLen, len(az.Exact))
+		totalExactDL += len(az.Exact)
 
-		e.DocTokens = append(e.DocTokens, tf)
-		e.DocLen = append(e.DocLen, len(toks))
-		totalDL += len(toks)
+		softTF := map[string]float64{}
+		softSeen := map[string]bool{}
+		for t, w := range az.Soft {
+			softTF[t] = w
+			if !softSeen[t] {
+				e.SoftDF[t]++
+				softSeen[t] = true
+			}
+		}
+		e.DocSoftTokens = append(e.DocSoftTokens, softTF)
+		softLen := sumFloatMap(softTF)
+		e.DocSoftLen = append(e.DocSoftLen, softLen)
+		totalSoftDL += softLen
 
 		// 3) dense vector
 		if embedder != nil {
@@ -218,9 +268,17 @@ func NewEngine(docs []Doc, cfg EngineConfig, syn *Synonyms, embedder Embedder) *
 	}
 
 	if e.N > 0 {
-		e.AvgDL = float64(totalDL) / float64(e.N)
+		e.AvgExactDL = float64(totalExactDL) / float64(e.N)
+		e.AvgSoftDL = totalSoftDL / float64(e.N)
 	} else {
-		e.AvgDL = 1
+		e.AvgExactDL = 1
+		e.AvgSoftDL = 1
+	}
+	if e.AvgExactDL <= 0 {
+		e.AvgExactDL = 1
+	}
+	if e.AvgSoftDL <= 0 {
+		e.AvgSoftDL = 1
 	}
 
 	return e
@@ -240,35 +298,7 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 	}
 
 	qNorm := strings.ToLower(normalizeWS(q))
-
-	// BM25 query tokens
-	qToks := tokenize(q)
-
-	// token weights (supports synonym expansion)
-	qWeights := map[string]float64{}
-	for _, t := range qToks {
-		if t == "" {
-			continue
-		}
-		qWeights[t] = 1.0
-	}
-
-	if e.Syn != nil {
-		for _, t := range qToks {
-			exp := e.Syn.ExpandTokens(t)
-			for tok, w := range exp {
-				if tok == "" || w <= 0 {
-					continue
-				}
-				if cur, ok := qWeights[tok]; !ok || w > cur {
-					qWeights[tok] = w
-				}
-			}
-		}
-	}
-
-	// char vector for fuzzy-ish matching
-	qChrVec := toTF(charNgrams(q, e.Cfg.NMin, e.Cfg.NMax))
+	az := analyzeQueryText(q, e.Syn, e.Translit)
 
 	// dense query vector for semantic search
 	var qDense []float64
@@ -279,49 +309,41 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 		}
 	}
 
+	qChrVec := toTF(charNgrams(q, e.Cfg.NMin, e.Cfg.NMax))
+
 	type pair struct {
 		i int
 		s float64
 	}
-
 	ps := make([]pair, 0, len(e.Docs))
 
 	for i, d := range e.Docs {
 		score := 0.0
 
-		// 1) BM25
 		if e.Cfg.WBm25 > 0 {
-			score += e.Cfg.WBm25 * e.bm25(i, qWeights)
+			score += e.Cfg.WBm25 * e.bm25Exact(i, az.Exact)
 		}
-
-		// 2) char cosine
+		if e.Cfg.WBm25Soft > 0 {
+			score += e.Cfg.WBm25Soft * e.bm25Soft(i, az.Soft)
+		}
 		if e.Cfg.WChr > 0 {
 			score += e.Cfg.WChr * cosine(qChrVec, e.ChrDocVecs[i])
 		}
-
-		// 3) dense vector cosine
 		if e.Cfg.WVec > 0 && len(qDense) > 0 && len(e.DenseDocVecs[i]) > 0 {
 			score += e.Cfg.WVec * cosineDense(qDense, e.DenseDocVecs[i])
 		}
 
-		// 4) boosts
 		titleLower := strings.ToLower(normalizeWS(d.Title))
-
 		if titleLower == qNorm {
 			score += e.Cfg.BoostTitleExact
 		}
-
 		if strings.Contains(titleLower, qNorm) {
 			score += e.Cfg.BoostTitlePhrase
 		}
-
-		if len(qToks) > 0 {
+		if len(az.Exact) > 0 {
 			allInTitle := true
-			for _, t := range qToks {
-				if t == "" {
-					continue
-				}
-				if !strings.Contains(titleLower, t) {
+			for _, t := range az.Exact {
+				if t == "" || !strings.Contains(titleLower, t) {
 					allInTitle = false
 					break
 				}
@@ -341,7 +363,6 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 		if p.s < e.Cfg.MinScore {
 			break
 		}
-
 		d := e.Docs[p.i]
 		out = append(out, SearchResult{
 			ID:    d.ID,
@@ -349,43 +370,141 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 			Score: math.Round(p.s*10000) / 10000,
 			Meta:  d.Meta,
 		})
-
 		if len(out) >= k {
 			break
 		}
 	}
+	return out
+}
 
+func (e *Engine) Suggest(query string, k int) []Suggestion {
+	q := strings.ToLower(strings.TrimSpace(query))
+	if q == "" {
+		return nil
+	}
+	if k <= 0 {
+		k = 8
+	}
+
+	qNorm := normalizeWS(q)
+	az := analyzeQueryText(q, e.Syn, e.Translit)
+
+	type cand struct {
+		text  string
+		score float64
+	}
+	seen := map[string]float64{}
+
+	for _, d := range e.Docs {
+		titleNorm := strings.ToLower(normalizeWS(d.Title))
+		s := 0.0
+
+		switch {
+		case strings.HasPrefix(titleNorm, qNorm):
+			s += e.Cfg.SuggestPrefixBoost
+		case strings.Contains(titleNorm, qNorm):
+			s += e.Cfg.SuggestInfixBoost
+		}
+
+		for tok, w := range az.Soft {
+			if tok == "" {
+				continue
+			}
+			if strings.HasPrefix(titleNorm, tok) {
+				s += 1.6 * w
+			} else if strings.Contains(titleNorm, tok) {
+				s += 0.6 * w
+			}
+		}
+
+		if s <= 0 {
+			continue
+		}
+		if cur, ok := seen[d.Title]; !ok || s > cur {
+			seen[d.Title] = s
+		}
+	}
+
+	cands := make([]cand, 0, len(seen))
+	for text, score := range seen {
+		cands = append(cands, cand{text: text, score: score})
+	}
+	sort.Slice(cands, func(i, j int) bool {
+		if cands[i].score == cands[j].score {
+			li, lj := utf8.RuneCountInString(cands[i].text), utf8.RuneCountInString(cands[j].text)
+			if li == lj {
+				return cands[i].text < cands[j].text
+			}
+			return li < lj
+		}
+		return cands[i].score > cands[j].score
+	})
+
+	out := make([]Suggestion, 0, minInt(k, len(cands)))
+	for _, c := range cands {
+		out = append(out, Suggestion{Text: c.text, Score: math.Round(c.score*10000) / 10000})
+		if len(out) >= k {
+			break
+		}
+	}
 	return out
 }
 
 /* ===================== BM25 ===================== */
 
-func (e *Engine) bm25(docIdx int, qWeights map[string]float64) float64 {
+func (e *Engine) bm25Exact(docIdx int, qTokens []string) float64 {
 	k1 := 1.2
 	b := 0.75
+	if len(qTokens) == 0 {
+		return 0
+	}
 
-	tf := e.DocTokens[docIdx]
-	dl := float64(e.DocLen[docIdx])
-
-	denomNorm := (1 - b) + b*(dl/e.AvgDL)
+	tf := e.DocExactTokens[docIdx]
+	dl := float64(e.DocExactLen[docIdx])
+	denomNorm := (1 - b) + b*(dl/e.AvgExactDL)
 
 	score := 0.0
-	for qt, wq := range qWeights {
-		if qt == "" {
+	seen := map[string]bool{}
+	for _, qt := range qTokens {
+		if qt == "" || seen[qt] {
 			continue
 		}
-
+		seen[qt] = true
 		f := float64(tf[qt])
 		if f == 0 {
 			continue
 		}
-
-		df := float64(e.DF[qt])
+		df := float64(e.ExactDF[qt])
 		idf := math.Log(1 + (float64(e.N)-df+0.5)/(df+0.5))
+		score += idf * (f * (k1 + 1)) / (f + k1*denomNorm)
+	}
+	return score
+}
 
-		score += wq * idf * (f * (k1 + 1)) / (f + k1*denomNorm)
+func (e *Engine) bm25Soft(docIdx int, qWeights map[string]float64) float64 {
+	k1 := 1.2
+	b := 0.75
+	if len(qWeights) == 0 {
+		return 0
 	}
 
+	tf := e.DocSoftTokens[docIdx]
+	dl := e.DocSoftLen[docIdx]
+	denomNorm := (1 - b) + b*(dl/e.AvgSoftDL)
+
+	score := 0.0
+	for qt, wq := range qWeights {
+		if qt == "" || wq <= 0 {
+			continue
+		}
+		f := tf[qt]
+		if f == 0 {
+			continue
+		}
+		df := float64(e.SoftDF[qt])
+		idf := math.Log(1 + (float64(e.N)-df+0.5)/(df+0.5))
+		score += wq * idf * (f * (k1 + 1)) / (f + k1*denomNorm)
+	}
 	return score
 }
 
@@ -393,22 +512,9 @@ func (e *Engine) bm25(docIdx int, qWeights map[string]float64) float64 {
 
 var reToken = regexp.MustCompile(`(?:[A-Za-z0-9]+|[\p{Thai}]+)`)
 
-// ไทยยังไม่ได้ตัดคำละเอียด ใช้ char n-gram ช่วยเป็นหลัก
+// tokenize is preserved for legacy helpers / synonym expansion callers.
 func tokenize(s string) []string {
-	s = strings.ToLower(s)
-
-	raw := reToken.FindAllString(s, -1)
-	out := make([]string, 0, len(raw))
-
-	for _, t := range raw {
-		t = strings.TrimSpace(t)
-		if t == "" {
-			continue
-		}
-		out = append(out, t)
-	}
-
-	return out
+	return tokenizeExact(s)
 }
 
 /* ===================== Char n-gram ===================== */
@@ -538,4 +644,12 @@ func getEnvInt(key string, fallback int) int {
 		return fallback
 	}
 	return v
+}
+
+func sumFloatMap(m map[string]float64) float64 {
+	total := 0.0
+	for _, v := range m {
+		total += v
+	}
+	return total
 }

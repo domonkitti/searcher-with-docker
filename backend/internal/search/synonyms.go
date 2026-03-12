@@ -1,4 +1,4 @@
-package internal
+package search
 
 import (
 	"encoding/json"
