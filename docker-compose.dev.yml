@@ -17,6 +17,14 @@ services:
       timeout: 5s
       retries: 5
 
+  embedder:
+    build:
+      context: ./embedder
+    container_name: search-embedder-dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+
   api:
     build:
       context: ./backend
@@ -34,6 +42,11 @@ services:
       # ยังใช้ json ต่อ
       RULES_JSON: /data/rules.json
       SYNONYMS_JSON: /data/synonyms.json
+
+      # เพิ่ม 2 ตัวนี้
+      EMBEDDER_URL: http://embedder:8000
+      EMBEDDER_TIMEOUT_MS: 10000
+
     volumes:
       - ./backend/data/rules.json:/data/rules.json:ro
       - ./backend/data/synonyms.json:/data/synonyms.json:ro
@@ -42,6 +55,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      embedder:
+        condition: service_started
 
   web:
     build:

@@ -64,6 +64,7 @@ type runtimeState struct {
 	db      *sql.DB
 
 	titleBoost int
+	embedder   Embedder
 }
 
 func (s *runtimeState) snapshot() ([]Doc, []KitDetail, RuleConfig, *Engine) {
@@ -77,7 +78,7 @@ func (s *runtimeState) reloadEngineFromDB(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	engine := NewEngine(docs, s.cfg, s.syn)
+	engine := NewEngine(docs, s.cfg, s.syn, s.embedder)
 
 	s.mu.Lock()
 	s.docs = docs
@@ -126,6 +127,8 @@ func RunServer() {
 		syn = s
 	}
 
+	embedder := NewHTTPEmbedderFromEnv()
+
 	docs := MustBuildDocsOrEmpty(context.Background(), db, titleBoost)
 	kits, err := LoadKitDetailsFromDB(context.Background(), db)
 	if err != nil {
@@ -138,11 +141,12 @@ func RunServer() {
 		docs:       docs,
 		kits:       kits,
 		ruleCfg:    ruleCfg,
-		engine:     NewEngine(docs, cfg, syn),
+		engine:     NewEngine(docs, cfg, syn, embedder),
 		syn:        syn,
 		cfg:        cfg,
 		db:         db,
 		titleBoost: titleBoost,
+		embedder:   embedder,
 	}
 
 	r := gin.Default()
@@ -381,6 +385,7 @@ func RunServer() {
 
 		c.JSON(200, gin.H{"ok": true, "inserted": inserted})
 	})
+
 	r.POST("/api/admin/import/kits", func(c *gin.Context) {
 		fh, err := c.FormFile("file")
 		if err != nil {
