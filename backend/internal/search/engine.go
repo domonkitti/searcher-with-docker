@@ -290,6 +290,7 @@ func (e *Engine) GetByID(id string) (Doc, bool) {
 	}
 	return Doc{}, false
 }
+// ---------------ส่วนของการ เซฺิร์ชและวิเคราะห์ข้อความ----------------
 
 func (e *Engine) Search(query string, k int) []SearchResult {
 	q := strings.ToLower(strings.TrimSpace(query))
@@ -311,6 +312,19 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 
 	qChrVec := toTF(charNgrams(q, e.Cfg.NMin, e.Cfg.NMax))
 
+	// dynamic weights:
+	// query สั้นไทยมักโดน soft/char/vector พาเพี้ยน
+	wBm25 := e.Cfg.WBm25
+	wBm25Soft := e.Cfg.WBm25Soft
+	wChr := e.Cfg.WChr
+	wVec := e.Cfg.WVec
+
+	if len(az.Exact) <= 2 {
+		wBm25Soft *= 0.60
+		wChr *= 0.75
+		wVec *= 0.70
+	}
+
 	type pair struct {
 		i int
 		s float64
@@ -320,36 +334,44 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 	for i, d := range e.Docs {
 		score := 0.0
 
-		if e.Cfg.WBm25 > 0 {
-			score += e.Cfg.WBm25 * e.bm25Exact(i, az.Exact)
+		if wBm25 > 0 {
+			score += wBm25 * e.bm25Exact(i, az.Exact)
 		}
-		if e.Cfg.WBm25Soft > 0 {
-			score += e.Cfg.WBm25Soft * e.bm25Soft(i, az.Soft)
+		if wBm25Soft > 0 {
+			score += wBm25Soft * e.bm25Soft(i, az.Soft)
 		}
-		if e.Cfg.WChr > 0 {
-			score += e.Cfg.WChr * cosine(qChrVec, e.ChrDocVecs[i])
+		if wChr > 0 {
+			score += wChr * cosine(qChrVec, e.ChrDocVecs[i])
 		}
-		if e.Cfg.WVec > 0 && len(qDense) > 0 && len(e.DenseDocVecs[i]) > 0 {
-			score += e.Cfg.WVec * cosineDense(qDense, e.DenseDocVecs[i])
+		if wVec > 0 && len(qDense) > 0 && len(e.DenseDocVecs[i]) > 0 {
+			score += wVec * cosineDense(qDense, e.DenseDocVecs[i])
 		}
 
 		titleLower := strings.ToLower(normalizeWS(d.Title))
+
 		if titleLower == qNorm {
 			score += e.Cfg.BoostTitleExact
 		}
 		if strings.Contains(titleLower, qNorm) {
 			score += e.Cfg.BoostTitlePhrase
 		}
+
 		if len(az.Exact) > 0 {
-			allInTitle := true
-			for _, t := range az.Exact {
-				if t == "" || !strings.Contains(titleLower, t) {
-					allInTitle = false
-					break
-				}
-			}
+			matchedTerms := countMatchedExactTokens(titleLower, az.Exact)
+			allInTitle := matchedTerms == len(az.Exact)
+
 			if allInTitle {
+				// เดิมมีอยู่แล้ว
 				score += e.Cfg.BoostAllTokens
+
+				// เพิ่มแรงอีกสำหรับเคสมีครบทุกคำ
+				if len(az.Exact) >= 2 {
+					score += 1.6
+					score += tokenSpanBoost(titleLower, az.Exact)
+				}
+			} else if len(az.Exact) >= 2 && matchedTerms > 0 {
+				// มีแค่บางคำ อย่าให้ชนะง่าย
+				score *= 0.82
 			}
 		}
 
@@ -375,6 +397,59 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 		}
 	}
 	return out
+}
+// search helper
+func countMatchedExactTokens(title string, toks []string) int {
+	matched := 0
+	for _, t := range toks {
+		if t == "" {
+			continue
+		}
+		if strings.Contains(title, t) {
+			matched++
+		}
+	}
+	return matched
+}
+
+func tokenSpanBoost(title string, toks []string) float64 {
+	pos := make([]int, 0, len(toks))
+	for _, t := range toks {
+		if t == "" {
+			continue
+		}
+		i := strings.Index(title, t)
+		if i < 0 {
+			return 0
+		}
+		pos = append(pos, i)
+	}
+
+	if len(pos) < 2 {
+		return 0
+	}
+
+	minPos, maxPos := pos[0], pos[0]
+	for _, p := range pos[1:] {
+		if p < minPos {
+			minPos = p
+		}
+		if p > maxPos {
+			maxPos = p
+		}
+	}
+
+	span := maxPos - minPos
+	switch {
+	case span <= 8:
+		return 1.2
+	case span <= 16:
+		return 0.7
+	case span <= 28:
+		return 0.3
+	default:
+		return 0
+	}
 }
 
 func (e *Engine) Suggest(query string, k int) []Suggestion {
