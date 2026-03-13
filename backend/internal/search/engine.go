@@ -378,7 +378,7 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 }
 
 func (e *Engine) Suggest(query string, k int) []Suggestion {
-	q := strings.ToLower(strings.TrimSpace(query))
+	q := strings.TrimSpace(query)
 	if q == "" {
 		return nil
 	}
@@ -386,67 +386,28 @@ func (e *Engine) Suggest(query string, k int) []Suggestion {
 		k = 8
 	}
 
-	qNorm := normalizeWS(q)
-	az := analyzeQueryText(q, e.Syn, e.Translit)
+	results := e.Search(q, k*3)
 
-	type cand struct {
-		text  string
-		score float64
-	}
-	seen := map[string]float64{}
+	seen := map[string]bool{}
+	out := make([]Suggestion, 0, k)
 
-	for _, d := range e.Docs {
-		titleNorm := strings.ToLower(normalizeWS(d.Title))
-		s := 0.0
-
-		switch {
-		case strings.HasPrefix(titleNorm, qNorm):
-			s += e.Cfg.SuggestPrefixBoost
-		case strings.Contains(titleNorm, qNorm):
-			s += e.Cfg.SuggestInfixBoost
-		}
-
-		for tok, w := range az.Soft {
-			if tok == "" {
-				continue
-			}
-			if strings.HasPrefix(titleNorm, tok) {
-				s += 1.6 * w
-			} else if strings.Contains(titleNorm, tok) {
-				s += 0.6 * w
-			}
-		}
-
-		if s <= 0 {
+	for _, r := range results {
+		title := strings.TrimSpace(r.Title)
+		if title == "" || seen[title] {
 			continue
 		}
-		if cur, ok := seen[d.Title]; !ok || s > cur {
-			seen[d.Title] = s
-		}
-	}
+		seen[title] = true
 
-	cands := make([]cand, 0, len(seen))
-	for text, score := range seen {
-		cands = append(cands, cand{text: text, score: score})
-	}
-	sort.Slice(cands, func(i, j int) bool {
-		if cands[i].score == cands[j].score {
-			li, lj := utf8.RuneCountInString(cands[i].text), utf8.RuneCountInString(cands[j].text)
-			if li == lj {
-				return cands[i].text < cands[j].text
-			}
-			return li < lj
-		}
-		return cands[i].score > cands[j].score
-	})
+		out = append(out, Suggestion{
+			Text:  title,
+			Score: r.Score,
+		})
 
-	out := make([]Suggestion, 0, minInt(k, len(cands)))
-	for _, c := range cands {
-		out = append(out, Suggestion{Text: c.text, Score: math.Round(c.score*10000) / 10000})
 		if len(out) >= k {
 			break
 		}
 	}
+
 	return out
 }
 
