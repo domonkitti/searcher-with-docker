@@ -22,6 +22,15 @@ type analyzerOutput struct {
 	Soft  map[string]float64
 }
 
+type queryIntent struct {
+	Exact    []string
+	Parts    []string
+	PartSet  map[string]bool
+	Phrase   string
+	IsThai   bool
+	IsSingle bool
+}
+
 func analyzeDocText(text string) analyzerOutput {
 	text = strings.ToLower(normalizeWS(strings.TrimSpace(text)))
 	if text == "" {
@@ -218,4 +227,124 @@ func softTermsSorted(m map[string]float64) []string {
 		return wi > wj
 	})
 	return keys
+}
+
+func buildQueryIntent(raw string) queryIntent {
+	raw = strings.ToLower(normalizeWS(strings.TrimSpace(raw)))
+	qi := queryIntent{Phrase: raw}
+	if raw == "" {
+		return qi
+	}
+
+	qi.Exact = tokenizeExact(raw)
+	qi.IsSingle = len(qi.Exact) == 1
+	qi.IsThai = qi.IsSingle && isThaiOnly(qi.Exact[0])
+	if !qi.IsThai {
+		return qi
+	}
+
+	parts := thaiIntentParts(qi.Exact[0])
+	if len(parts) == 0 {
+		return qi
+	}
+	qi.Parts = parts
+	qi.PartSet = make(map[string]bool, len(parts))
+	for _, p := range parts {
+		qi.PartSet[p] = true
+	}
+	return qi
+}
+
+func thaiIntentParts(s string) []string {
+	s = strings.TrimSpace(s)
+	if !isThaiOnly(s) {
+		return nil
+	}
+
+	rs := []rune(s)
+	n := len(rs)
+	if n < 5 {
+		return nil
+	}
+
+	type pair struct {
+		left  string
+		right string
+		score int
+	}
+
+	candidates := make([]pair, 0)
+
+	for cut := 2; cut <= n-2; cut++ {
+		left := strings.TrimSpace(string(rs[:cut]))
+		right := strings.TrimSpace(string(rs[cut:]))
+
+		if !validThaiIntentPart(left) || !validThaiIntentPart(right) {
+			continue
+		}
+
+		// เอา split ที่ดูสมดุลกว่า และไม่แปลกเกินไป
+		score := 0
+
+		// ความยาวใกล้กันดีกว่า
+		diff := utf8.RuneCountInString(left) - utf8.RuneCountInString(right)
+		if diff < 0 {
+			diff = -diff
+		}
+		score += 10 - diff
+
+		// ให้โบนัสถ้าทั้งสองฝั่งยาวพอ
+		if utf8.RuneCountInString(left) >= 3 {
+			score += 2
+		}
+		if utf8.RuneCountInString(right) >= 3 {
+			score += 2
+		}
+
+		candidates = append(candidates, pair{
+			left:  left,
+			right: right,
+			score: score,
+		})
+	}
+
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			return len([]rune(candidates[i].left))+len([]rune(candidates[i].right)) >
+				len([]rune(candidates[j].left))+len([]rune(candidates[j].right))
+		}
+		return candidates[i].score > candidates[j].score
+	})
+
+	best := candidates[0]
+
+	// เอาแค่คู่เดียวพอ อย่าแตกหลาย part มั่ว ๆ
+	return []string{best.left, best.right}
+}
+
+func validThaiIntentPart(s string) bool {
+	s = strings.TrimSpace(s)
+	if !isThaiOnly(s) {
+		return false
+	}
+
+	rn := utf8.RuneCountInString(s)
+	if rn < 2 || rn > 6 {
+		return false
+	}
+
+	for _, stop := range []string{
+		"การ", "และ", "หรือ", "สำหรับ", "ชนิด", "ประเภท",
+		"ชุด", "งาน", "ค่า", "เครื่อง", "อุปกรณ์",
+	} {
+		if s == stop {
+			return false
+		}
+	}
+
+	return true
 }

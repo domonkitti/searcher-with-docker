@@ -59,6 +59,10 @@ type EngineConfig struct {
 	// suggest
 	SuggestPrefixBoost float64
 	SuggestInfixBoost  float64
+
+	// intent rerank
+	IntentPartBoost   float64
+	IntentPartPenalty float64
 }
 
 type Embedder interface {
@@ -128,6 +132,9 @@ func DefaultEngineConfig() EngineConfig {
 
 		SuggestPrefixBoost: 5.0,
 		SuggestInfixBoost:  1.5,
+
+		IntentPartBoost:   1.35,
+		IntentPartPenalty: 0.52,
 	}
 }
 
@@ -290,6 +297,7 @@ func (e *Engine) GetByID(id string) (Doc, bool) {
 	}
 	return Doc{}, false
 }
+
 // ---------------ส่วนของการ เซฺิร์ชและวิเคราะห์ข้อความ----------------
 
 func (e *Engine) Search(query string, k int) []SearchResult {
@@ -300,6 +308,7 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 
 	qNorm := strings.ToLower(normalizeWS(q))
 	az := analyzeQueryText(q, e.Syn, e.Translit)
+	intent := buildQueryIntent(q)
 
 	// dense query vector for semantic search
 	var qDense []float64
@@ -361,19 +370,45 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 			allInTitle := matchedTerms == len(az.Exact)
 
 			if allInTitle {
-				// เดิมมีอยู่แล้ว
 				score += e.Cfg.BoostAllTokens
 
-				// เพิ่มแรงอีกสำหรับเคสมีครบทุกคำ
 				if len(az.Exact) >= 2 {
 					score += 1.6
 					score += tokenSpanBoost(titleLower, az.Exact)
 				}
 			} else if len(az.Exact) >= 2 && matchedTerms > 0 {
-				// มีแค่บางคำ อย่าให้ชนะง่าย
 				score *= 0.82
 			}
 		}
+
+		// rerank สำหรับ query ไทยติดกัน เช่น "ตัดไม้", "ซ่อมอาคาร"
+		// ถ้า title มีครบหลาย part จะได้ boost
+		// ถ้ามีแค่ part เดียว และไม่มี phrase ตรง จะโดน penalty
+	if intent.IsThai && intent.IsSingle && len(intent.Parts) == 2 {
+		left := intent.Parts[0]
+		right := intent.Parts[1]
+
+		hasPhrase := strings.Contains(titleLower, intent.Phrase)
+		hasLeft := strings.Contains(titleLower, left)
+		hasRight := strings.Contains(titleLower, right)
+
+		switch {
+		case hasPhrase:
+			score += 2.2
+
+		case hasLeft && hasRight:
+			score += 1.8
+			score += intentPartSpanBoost(titleLower, intent.Parts)
+
+		case hasLeft || hasRight:
+			// มีแค่ครึ่งเดียว ให้กดแรง
+			score *= 0.18
+
+		default:
+			// ไม่เกี่ยวเลย
+			score *= 0.08
+		}
+	}
 
 		ps = append(ps, pair{i: i, s: score})
 	}
@@ -398,6 +433,7 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 	}
 	return out
 }
+
 // search helper
 func countMatchedExactTokens(title string, toks []string) int {
 	matched := 0
@@ -447,6 +483,47 @@ func tokenSpanBoost(title string, toks []string) float64 {
 		return 0.7
 	case span <= 28:
 		return 0.3
+	default:
+		return 0
+	}
+}
+
+func countMatchedIntentParts(title string, parts []string) int {
+	matched := 0
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		if strings.Contains(title, p) {
+			matched++
+		}
+	}
+	return matched
+}
+
+func intentPartSpanBoost(title string, parts []string) float64 {
+	positions := make([]int, 0, len(parts))
+	for _, p := range parts {
+		if p == "" {
+			continue
+		}
+		i := strings.Index(title, p)
+		if i >= 0 {
+			positions = append(positions, i)
+		}
+	}
+	if len(positions) < 2 {
+		return 0
+	}
+
+	sort.Ints(positions)
+	span := positions[len(positions)-1] - positions[0]
+
+	switch {
+	case span <= 12:
+		return 0.95
+	case span <= 24:
+		return 0.45
 	default:
 		return 0
 	}
