@@ -299,14 +299,16 @@ func RunServer() {
 
 	r.GET("/api/kits/:kitId", func(c *gin.Context) {
 		_, kits, _, _ := state.snapshot()
-		kitId := c.Param("kitId")
+		kitId := strings.TrimSpace(c.Param("kitId"))
+
 		var found *data.KitDetail
 		for i := range kits {
-			if kits[i].KitID == kitId {
+			if strings.TrimSpace(kits[i].SourceID) == kitId {
 				found = &kits[i]
 				break
 			}
 		}
+
 		if found == nil {
 			c.JSON(404, gin.H{"detail": "Not Found"})
 			return

@@ -300,8 +300,8 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 
 	qNorm := strings.ToLower(normalizeWS(q))
 	az := analyzeQueryText(q, e.Syn, e.Translit)
+	fmt.Printf("QUERY=%q exact=%v soft=%v\n", q, az.Exact, az.Soft)
 
-	// dense query vector for semantic search
 	var qDense []float64
 	if e.Embedder != nil {
 		vec, err := e.Embedder.Embed(q)
@@ -312,17 +312,16 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 
 	qChrVec := toTF(charNgrams(q, e.Cfg.NMin, e.Cfg.NMax))
 
-	// dynamic weights:
-	// query สั้นไทยมักโดน soft/char/vector พาเพี้ยน
 	wBm25 := e.Cfg.WBm25
 	wBm25Soft := e.Cfg.WBm25Soft
 	wChr := e.Cfg.WChr
 	wVec := e.Cfg.WVec
 
+	// ลด soft/vec ลงบ้างสำหรับ query สั้น แต่ไม่กดแรงเกิน
 	if len(az.Exact) <= 2 {
-		wBm25Soft *= 0.60
-		wChr *= 0.75
-		wVec *= 0.70
+		wBm25Soft *= 0.75
+		wChr *= 0.85
+		wVec *= 0.80
 	}
 
 	type pair struct {
@@ -349,6 +348,7 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 
 		titleLower := strings.ToLower(normalizeWS(d.Title))
 
+		// exact phrase ช่วยได้ แต่ไม่แรงเวอร์
 		if titleLower == qNorm {
 			score += e.Cfg.BoostTitleExact
 		}
@@ -356,29 +356,44 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 			score += e.Cfg.BoostTitlePhrase
 		}
 
+		// ดึงนิสัย autocomplete เดิมกลับมาแบบเบา ๆ
+		if strings.HasPrefix(titleLower, qNorm) {
+			score += 2.5
+		}
+
+		for tok, w := range az.Soft {
+			if tok == "" {
+				continue
+			}
+			if strings.Contains(titleLower, tok) {
+				score += 0.20 * w
+			}
+		}
+
+		// exact token match ใช้เป็น bonus อย่างเดียว
+		// ห้ามใช้เป็น penalty เพราะจะฆ่าพวก "ตัดต้นไม้"
 		if len(az.Exact) > 0 {
 			matchedTerms := countMatchedExactTokens(titleLower, az.Exact)
 			allInTitle := matchedTerms == len(az.Exact)
 
 			if allInTitle {
-				// เดิมมีอยู่แล้ว
 				score += e.Cfg.BoostAllTokens
-
-				// เพิ่มแรงอีกสำหรับเคสมีครบทุกคำ
 				if len(az.Exact) >= 2 {
-					score += 1.6
+					score += 0.8
 					score += tokenSpanBoost(titleLower, az.Exact)
 				}
-			} else if len(az.Exact) >= 2 && matchedTerms > 0 {
-				// มีแค่บางคำ อย่าให้ชนะง่าย
-				score *= 0.82
 			}
 		}
 
 		ps = append(ps, pair{i: i, s: score})
 	}
 
-	sort.Slice(ps, func(i, j int) bool { return ps[i].s > ps[j].s })
+	sort.Slice(ps, func(i, j int) bool {
+		if ps[i].s == ps[j].s {
+			return e.Docs[ps[i].i].Title < e.Docs[ps[j].i].Title
+		}
+		return ps[i].s > ps[j].s
+	})
 
 	out := make([]SearchResult, 0, k)
 	for _, p := range ps {
@@ -452,6 +467,137 @@ func tokenSpanBoost(title string, toks []string) float64 {
 	}
 }
 
+func isThaiCombiningMark(r rune) bool {
+	switch {
+	case r == 0x0E31:
+		return true
+	case r >= 0x0E34 && r <= 0x0E3A:
+		return true
+	case r >= 0x0E47 && r <= 0x0E4E:
+		return true
+	default:
+		return false
+	}
+}
+
+func looksUsableThaiTerm(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	rs := []rune(s)
+	if len(rs) < 3 {
+		return false
+	}
+	if isThaiCombiningMark(rs[0]) {
+		return false
+	}
+	return true
+}
+
+func buildCoverageTerms(qNorm string, exact []string, soft map[string]float64) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, 6)
+
+	add := func(s string) {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			return
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+
+	// exact เดิมใส่ก่อน
+	for _, t := range exact {
+		add(t)
+	}
+
+	// ถ้า exact มีคำเดียว และ query ไม่มีเว้นวรรค
+	// ให้ดึงคำ prefix/suffix ที่ดูเป็นคำไทยจริงจาก soft มาเพิ่ม
+	if len(exact) == 1 && !strings.Contains(qNorm, " ") {
+		var bestPrefix string
+		var bestSuffix string
+
+		for tok, w := range soft {
+			if w < 0.30 {
+				continue
+			}
+			if !looksUsableThaiTerm(tok) {
+				continue
+			}
+
+			if strings.HasPrefix(qNorm, tok) {
+				if bestPrefix == "" || len([]rune(tok)) < len([]rune(bestPrefix)) {
+					bestPrefix = tok
+				}
+			}
+			if strings.HasSuffix(qNorm, tok) {
+				if bestSuffix == "" || len([]rune(tok)) < len([]rune(bestSuffix)) {
+					bestSuffix = tok
+				}
+			}
+		}
+
+		add(bestPrefix)
+		add(bestSuffix)
+	}
+
+	return out
+}
+
+func countMatchedTerms(title string, toks []string) int {
+	matched := 0
+	for _, t := range toks {
+		if t == "" {
+			continue
+		}
+		if strings.Contains(title, t) {
+			matched++
+		}
+	}
+	return matched
+}
+
+func tokenSpanBoost(title string, toks []string) float64 {
+	pos := make([]int, 0, len(toks))
+	for _, t := range toks {
+		if t == "" {
+			continue
+		}
+		i := strings.Index(title, t)
+		if i < 0 {
+			return 0
+		}
+		pos = append(pos, i)
+	}
+
+	if len(pos) < 2 {
+		return 0
+	}
+
+	minPos, maxPos := pos[0], pos[0]
+	for _, p := range pos[1:] {
+		if p < minPos {
+			minPos = p
+		}
+		if p > maxPos {
+			maxPos = p
+		}
+	}
+
+	span := maxPos - minPos
+	switch {
+	case span <= 8:
+		return 1.2
+	case span <= 16:
+		return 0.7
+	case span <= 28:
+		return 0.3
+	default:
+		return 0
+	}
+}
 func (e *Engine) Suggest(query string, k int) []Suggestion {
 	q := strings.TrimSpace(query)
 	if q == "" {

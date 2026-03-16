@@ -65,6 +65,7 @@ ON items(source_id);
 
 CREATE TABLE IF NOT EXISTS kits (
     id BIGSERIAL PRIMARY KEY,
+    source_id TEXT UNIQUE,
     category TEXT,
     kit_name TEXT NOT NULL,
     page TEXT,
@@ -72,6 +73,12 @@ CREATE TABLE IF NOT EXISTS kits (
     special TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE kits
+ADD COLUMN IF NOT EXISTS source_id TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_kits_source_id
+ON kits(source_id);
 
 CREATE TABLE IF NOT EXISTS kit_lines (
     id BIGSERIAL PRIMARY KEY,

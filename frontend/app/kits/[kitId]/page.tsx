@@ -6,13 +6,15 @@ import Navbar from "../../components/Navbar";
 import BackButton from "../../components/BackButton";
 
 const API = process.env.NEXT_PUBLIC_API_BASE || "";
+
 type KitLine = { item: string; subItem?: string; unit?: string };
 type KitDetail = {
+  sourceId?: string;
   category?: string;
   kitName: string;
   page?: string;
-  order?: string;     // เก็บไว้ก่อน
-  special?: string;   // เก็บไว้ก่อน
+  order?: string;
+  special?: string;
   lines: KitLine[];
 };
 
@@ -22,16 +24,17 @@ function esc(s: any) {
 
 export default function KitDetailPage() {
   const params = useParams();
-  const kitId = (params?.kitId as string) || "";
+  const kitRef = (params?.kitId as string) || "";
 
   const [kit, setKit] = useState<KitDetail | null>(null);
 
   useEffect(() => {
-  if (!kitId) return;
-  fetch(`${API}/api/kits/${encodeURIComponent(kitId)}`)
-    .then(r => r.json())
-    .then(d => setKit(d.kit || null));
-  }, [kitId]);
+    if (!kitRef) return;
+
+    fetch(`${API}/api/kits/${encodeURIComponent(kitRef)}`)
+      .then((r) => r.json())
+      .then((d) => setKit(d.kit || null));
+  }, [kitRef]);
 
   const grouped = useMemo(() => {
     if (!kit) return [];
@@ -50,7 +53,6 @@ export default function KitDetailPage() {
       <Navbar />
       <BackButton />
       <div className="card">
-
         {!kit && (
           <div className="small" style={{ marginTop: 10 }}>
             กำลังโหลด…
@@ -61,14 +63,11 @@ export default function KitDetailPage() {
           <>
             <div className="title no-hover" style={{ marginTop: 10, whiteSpace: "pre-wrap" }}>
               {esc(kit.kitName)}
-              </div>
+            </div>
 
             <div className="small" style={{ marginTop: 6 }}>
               <b>อ้างอิง:</b> หน้า {esc(kit.page || "-")}
             </div>
-
-            {/* NOTE: order/special เก็บไว้ก่อน ยังไม่โชว์ตามที่ขอ */}
-            {/* <div className="small">ลำดับ: {esc(kit.order)} | เงื่อนไขพิเศษ: {esc(kit.special)}</div> */}
 
             <div className="kitTable" style={{ marginTop: 12 }}>
               <div className="kitHead">
@@ -80,13 +79,10 @@ export default function KitDetailPage() {
                 const subLines = (g.lines || []).filter((x) => (x.subItem || "").trim() !== "");
                 const mainLine = (g.lines || []).find((x) => (x.subItem || "").trim() === "");
                 const mainUnit = mainLine?.unit;
-
-                // ✅ ลำดับเริ่มที่ 1 เฉพาะ "รายการหลัก"
                 const no = idx + 1;
 
                 return (
                   <div className="kitRow" key={idx} style={{ display: "block" }}>
-                    {/* รายการหลัก (มีเลขลำดับ) */}
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
                       <div>
                         <span style={{ opacity: 0.7, marginRight: 8 }}>{no}.</span>
@@ -100,7 +96,6 @@ export default function KitDetailPage() {
                       )}
                     </div>
 
-                    {/* รายการย่อย (ไม่ใส่เลข, เยื้องขวาให้รู้ว่าเป็น sub) */}
                     {subLines.map((sl, sidx) => (
                       <div
                         key={sidx}
@@ -109,7 +104,7 @@ export default function KitDetailPage() {
                           justifyContent: "space-between",
                           gap: 12,
                           marginTop: 6,
-                          paddingLeft: 28, // ✅ เยื้องขวาเพิ่มจากเดิมให้ดูเป็น sub ชัดขึ้น
+                          paddingLeft: 28,
                         }}
                       >
                         <div style={{ opacity: 0.92 }}>• {esc(sl.subItem)}</div>
@@ -126,9 +121,7 @@ export default function KitDetailPage() {
               })}
             </div>
 
-            <div className="small" style={{ marginTop: 10, opacity: 0.7 }}>
-              
-            </div>
+            <div className="small" style={{ marginTop: 10, opacity: 0.7 }}></div>
           </>
         )}
       </div>

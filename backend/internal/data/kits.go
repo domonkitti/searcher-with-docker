@@ -1,7 +1,6 @@
 package data
 
 import (
-	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -16,12 +15,13 @@ type KitLine struct {
 }
 
 type KitDetail struct {
-	KitID    string    `json:"kitId"` // ✅ URL-safe ID (counter)
+	KitID    string    `json:"kitId"`             // internal DB id
+	SourceID string    `json:"sourceId"`          // public URL id from Excel column A
 	Category string    `json:"category,omitempty"`
 	KitName  string    `json:"kitName"`
 	Page     string    `json:"page,omitempty"`
-	Order    string    `json:"order,omitempty"`   // เก็บไว้ก่อน
-	Special  string    `json:"special,omitempty"` // เก็บไว้ก่อน
+	Order    string    `json:"order,omitempty"`
+	Special  string    `json:"special,omitempty"`
 	Lines    []KitLine `json:"lines"`
 }
 
@@ -30,17 +30,22 @@ type KitDetail struct {
 // This loader finds a header row and maps columns by header text.
 // Expected headers (Thai/English) are matched loosely, but the default order is:
 //
-//   หมวด | ชื่อชุดเครื่องมือ | รายการ | รายการย่อย | หน่วย | หน้า | ลำดับ | เงื่อนไขพิเศษ
+//   A: ID / Source ID
+//   B: หมวด
+//   C: ชื่อชุดเครื่องมือ
+//   D: รายการ
+//   E: รายการย่อย
+//   F: หน่วย
+//   G: หน้า
+//   H: ลำดับ
+//   I: เงื่อนไขพิเศษ
 //
-// ✅ You can add NEW rows freely — no code change needed.
-// ⚠️ If you rename header words drastically, update findKitHeaderAndCols() keywords.
 // -----------------------------------------------------
 type kitCols struct {
-	cat, kit, item, sub, unit, page, order, special int
-	ok                                              bool
+	source, cat, kit, item, sub, unit, page, order, special int
+	ok                                                      bool
 }
 
-// Excel columns: หมวด | ชื่อชุดเครื่องมือ | รายการ | รายการย่อย | หน่วย | หน้า | ลำดับ | เงื่อนไขพิเศษ
 func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 	if _, err := os.Stat(path); err != nil {
 		return nil, err
@@ -54,10 +59,8 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 
 	sheets := f.GetSheetList()
 
-	// ✅ ทำแบบ doc: id เป็น counter แต่ต้อง "คงเดิมภายในรันเดียว"
-	kitNameToID := map[string]string{}
-	byID := map[string]*KitDetail{}
-	counter := 0
+	// ใช้ source_id จาก Excel เป็นกุญแจหลัก
+	bySourceID := map[string]*KitDetail{}
 
 	for _, sh := range sheets {
 		rows, err := f.GetRows(sh)
@@ -68,7 +71,18 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 		hRowIdx, cols := findKitHeaderAndCols(rows)
 		if !cols.ok {
 			hRowIdx = 0
-			cols = kitCols{cat: 0, kit: 1, item: 2, sub: 3, unit: 4, page: 5, order: 6, special: 7, ok: true}
+			cols = kitCols{
+				source:  0, // A
+				cat:     1, // B
+				kit:     2, // C
+				item:    3, // D
+				sub:     4, // E
+				unit:    5, // F
+				page:    6, // G
+				order:   7, // H
+				special: 8, // I
+				ok:      true,
+			}
 		}
 
 		for i := hRowIdx + 1; i < len(rows); i++ {
@@ -80,6 +94,7 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 				return strings.TrimSpace(r[idx])
 			}
 
+			sourceID := normalizeKey(get(cols.source))
 			category := get(cols.cat)
 			kitName := get(cols.kit)
 			item := get(cols.item)
@@ -89,21 +104,14 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 			order := get(cols.order)
 			special := get(cols.special)
 
-			if kitName == "" || item == "" {
+			if sourceID == "" || kitName == "" || item == "" {
 				continue
 			}
 
-			// ✅ normalize key กันช่องว่างแฝง/NBSP จาก Excel
-			key := normalizeKey(kitName)
-
-			kitID, ok := kitNameToID[key]
+			k, ok := bySourceID[sourceID]
 			if !ok {
-				counter++
-				kitID = fmt.Sprintf("%d", counter) // ✅ URL-safe เหมือน doc
-				kitNameToID[key] = kitID
-
-				byID[kitID] = &KitDetail{
-					KitID:    kitID,
+				k = &KitDetail{
+					SourceID: sourceID,
 					Category: strings.TrimSpace(category),
 					KitName:  strings.TrimSpace(kitName),
 					Page:     strings.TrimSpace(page),
@@ -111,11 +119,9 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 					Special:  strings.TrimSpace(special),
 					Lines:    make([]KitLine, 0, 32),
 				}
+				bySourceID[sourceID] = k
 			}
 
-			k := byID[kitID]
-
-			// เติม metadata ถ้าเจอค่าที่ไม่ว่าง
 			if k.Category == "" && strings.TrimSpace(category) != "" {
 				k.Category = strings.TrimSpace(category)
 			}
@@ -137,9 +143,8 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 		}
 	}
 
-	// output
-	out := make([]KitDetail, 0, len(byID))
-	for _, v := range byID {
+	out := make([]KitDetail, 0, len(bySourceID))
+	for _, v := range bySourceID {
 		sort.SliceStable(v.Lines, func(i, j int) bool {
 			if v.Lines[i].Item == v.Lines[j].Item {
 				return v.Lines[i].SubItem < v.Lines[j].SubItem
@@ -149,7 +154,6 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 		out = append(out, *v)
 	}
 
-	// เรียงชุดตามชื่อ
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Category != out[j].Category {
 			return out[i].Category < out[j].Category
@@ -161,10 +165,9 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 }
 
 func normalizeKey(s string) string {
-	s = strings.ReplaceAll(s, "\u00a0", " ") // NBSP
+	s = strings.ReplaceAll(s, "\u00a0", " ")
 	s = strings.TrimSpace(s)
 	s = strings.ToLower(s)
-	// รวม whitespace ติด ๆ กันให้เป็นช่องเดียว
 	s = strings.Join(strings.Fields(s), " ")
 	return s
 }
@@ -174,11 +177,12 @@ func findKitHeaderAndCols(rows [][]string) (headerRow int, cols kitCols) {
 	if limit > 20 {
 		limit = 20
 	}
+
 	norm := func(s string) string {
 		s = strings.TrimSpace(s)
 		s = strings.ReplaceAll(s, " ", "")
 		s = strings.ReplaceAll(s, "\t", "")
-		return s
+		return strings.ToLower(s)
 	}
 
 	for r := 0; r < limit; r++ {
@@ -191,10 +195,19 @@ func findKitHeaderAndCols(rows [][]string) (headerRow int, cols kitCols) {
 			}
 		}
 
+		_, okSource := m["id"]
+		if !okSource {
+			_, okSource = m["sourceid"]
+		}
+		if !okSource {
+			_, okSource = m["source_id"]
+		}
 		_, okKit := m["ชื่อชุดเครื่องมือ"]
 		_, okItem := m["รายการ"]
-		if okKit && okItem {
+
+		if okSource && okKit && okItem {
 			return r, kitCols{
+				source:  getOr(m, "id", getOr(m, "sourceid", getOr(m, "source_id", -1))),
 				cat:     getOr(m, "หมวด", -1),
 				kit:     getOr(m, "ชื่อชุดเครื่องมือ", -1),
 				item:    getOr(m, "รายการ", -1),
@@ -207,6 +220,7 @@ func findKitHeaderAndCols(rows [][]string) (headerRow int, cols kitCols) {
 			}
 		}
 	}
+
 	return 0, kitCols{ok: false}
 }
 
