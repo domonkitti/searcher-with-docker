@@ -243,11 +243,9 @@ func LoadDocsFromDB(ctx context.Context, db *sql.DB, titleBoost int) ([]search.D
 	for _, it := range items {
 		boostedTitle := strings.TrimSpace(strings.Repeat(it.Title+" ", titleBoost))
 
-		textParts := []string{boostedTitle}
-		if strings.TrimSpace(it.Description) != "" {
-			textParts = append(textParts, strings.TrimSpace(it.Description))
-		}
-		textParts = append(textParts,
+		textParts := []string{
+			boostedTitle,
+			strings.TrimSpace(it.Description),
 			strings.TrimSpace(it.CategoryMain),
 			strings.TrimSpace(it.CategorySub),
 			strings.TrimSpace(it.GroupName),
@@ -255,7 +253,7 @@ func LoadDocsFromDB(ctx context.Context, db *sql.DB, titleBoost int) ([]search.D
 			strings.TrimSpace(it.BudgetUse),
 			strings.TrimSpace(it.Emergency),
 			strings.TrimSpace(it.ApprovalCondition),
-		)
+		}
 
 		docs = append(docs, search.Doc{
 			ID:    strconv.FormatInt(it.ID, 10),

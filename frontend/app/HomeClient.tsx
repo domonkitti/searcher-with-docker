@@ -22,50 +22,83 @@ function normalizeMultiline(s: any) {
   return esc(s).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
 }
 
-function ResultDescription({ text }: { text: string }) {
-  const [expanded, setExpanded] = useState(false);
-
-  const normalized = normalizeMultiline(text);
-  if (!normalized) return null;
-
-  const maxLen = 180;
-  const isLong = normalized.length > maxLen;
-  const displayText = expanded || !isLong ? normalized : normalized.slice(0, maxLen).trimEnd() + "...";
-
-  return (
-    <div
-      style={{
-        marginTop: 8,
-        color: "#4b5563",
-        lineHeight: 1.6,
-        whiteSpace: "pre-line",
-        fontSize: 15,
-      }}
-    >
-      <span>{displayText}</span>
-      {isLong && (
-        <>
-          {" "}
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            style={{
-              border: "none",
-              background: "none",
-              color: "#2563eb",
-              cursor: "pointer",
-              padding: 0,
-              font: "inherit",
-            }}
-          >
-            {expanded ? "ซ่อน" : "ดูเพิ่มเติม"}
-          </button>
-        </>
-      )}
-    </div>
-  );
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function tokenizeQuery(q: string) {
+  return q
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+}
+
+function buildSnippet(text: string, query: string, radius = 60) {
+  const raw = normalizeMultiline(text);
+  if (!raw) return "";
+
+  const flat = raw.replace(/\n+/g, " ");
+  const tokens = tokenizeQuery(query);
+
+  if (tokens.length === 0) {
+    return flat.length > radius * 2 ? flat.slice(0, radius * 2).trimEnd() + "..." : flat;
+  }
+
+  let bestIdx = -1;
+  for (const t of tokens) {
+    const idx = flat.toLowerCase().indexOf(t.toLowerCase());
+    if (idx >= 0 && (bestIdx === -1 || idx < bestIdx)) {
+      bestIdx = idx;
+    }
+  }
+
+  if (bestIdx === -1) {
+    return flat.length > radius * 2 ? flat.slice(0, radius * 2).trimEnd() + "..." : flat;
+  }
+
+  const start = Math.max(0, bestIdx - radius);
+  const end = Math.min(flat.length, bestIdx + radius);
+  let snippet = flat.slice(start, end).trim();
+
+  if (start > 0) snippet = "..." + snippet;
+  if (end < flat.length) snippet = snippet + "...";
+
+  return snippet;
+}
+
+function HighlightedSnippet({ snippet, query }: { snippet: string; query: string }) {
+  const tokens = tokenizeQuery(query).filter((t) => t.length > 0);
+
+  if (!snippet) return null;
+  if (tokens.length === 0) return <>{snippet}</>;
+
+  const pattern = new RegExp(`(${tokens.map(escapeRegExp).join("|")})`, "gi");
+  const parts = snippet.split(pattern);
+
+  return (
+    <>
+      {parts.map((part, i) => {
+        const matched = tokens.some((t) => part.toLowerCase() === t.toLowerCase());
+        return matched ? (
+          <mark
+            key={i}
+            style={{
+              backgroundColor: "#fff3b0",
+              padding: "0 2px",
+              borderRadius: 2,
+            }}
+          >
+            {part}
+          </mark>
+        ) : (
+          <span key={i}>{part}</span>
+        );
+      })}
+    </>
+  );
+}
 export default function HomeClient() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<SearchResult[]>([]);
@@ -331,16 +364,27 @@ export default function HomeClient() {
           const page = esc(m.page || "-");
           const row = esc(m.row || "-");
           const score = esc(r.score);
-
+          const snippet = buildSnippet(description, q);
           return (
             <div className="result" key={r.id}>
               <a className="title" href={`/doc/${encodeURIComponent(r.id)}`}>
                 {esc(r.title)}
               </a>
 
-              <ResultDescription text={description} />
+              {!!snippet && (
+                <div
+                  style={{
+                    marginTop: 8,
+                    color: "#4b5563",
+                    lineHeight: 1.6,
+                    fontSize: 15,
+                  }}
+                >
+                  <HighlightedSnippet snippet={description} query={q} />
+                </div>
+              )}
 
-              <div className="meta" style={{ marginTop: 10 }}>
+              <div className="meta" style={{ marginTop: snippet ? 10 : 6 }}>
                 <div>หมวด: {categoryMain}</div>
                 {!!categorySub.trim() && <div>หมวดย่อย: {categorySub}</div>}
                 {!!group.trim() && <div>กลุ่มรายการ: {group}</div>}

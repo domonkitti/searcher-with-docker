@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS items (
     category_sub TEXT,
     group_name TEXT,
     title TEXT NOT NULL,
+    description TEXT,
     page TEXT,
     order_no TEXT,
     special TEXT,
@@ -56,6 +57,9 @@ CREATE TABLE IF NOT EXISTS items (
 
 ALTER TABLE items
 ADD COLUMN IF NOT EXISTS source_id TEXT;
+
+ALTER TABLE items
+ADD COLUMN IF NOT EXISTS description TEXT;
 
 ALTER TABLE items
 ADD COLUMN IF NOT EXISTS approval_condition TEXT;

@@ -18,8 +18,8 @@ import (
 //	B: หมวด (categoryMain)
 //	C: หมวดย่อย (categorySub)
 //	D: กลุ่มรายการ (group)
-//	E: รายการ (title)                     <-- required
-//	F: คำบรรยาย (description)            <-- new
+//	E: รายการ (title)
+//	F: คำบรรยาย (description)
 //	G: หน้า (page)
 //	H: ลำดับ (row/order)
 //	I: เงื่อนไขพิเศษ (special)
@@ -143,13 +143,13 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]search.Doc, error) {
 			catMain := getCol(row, ColCategoryMain)
 			catSub := getCol(row, ColCategorySub)
 			group := getCol(row, ColGroup)
-			description := getCol(row, ColDescription)
+			description := normalizeMultiline(getCol(row, ColDescription))
 			page := getCol(row, ColPage)
 			orderNo := getCol(row, ColOrder)
-			special := getCol(row, ColSpecial)
+			special := normalizeMultiline(getCol(row, ColSpecial))
 			budgetUse := getCol(row, ColBudgetUse)
-			emergency := getCol(row, ColEmergency)
-			approvalCond := getCol(row, ColApprovalCond)
+			emergency := normalizeMultiline(getCol(row, ColEmergency))
+			approvalCond := normalizeMultiline(getCol(row, ColApprovalCond))
 
 			joined := strings.Join(nonEmpty(row), " | ")
 			boostedTitle := strings.TrimSpace(strings.Repeat(title+" ", titleBoost))
@@ -170,13 +170,13 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]search.Doc, error) {
 				"categoryMain":      defaultDash(catMain),
 				"categorySub":       strings.TrimSpace(catSub),
 				"group":             strings.TrimSpace(group),
-				"description":       normalizeMultiline(description),
+				"description":       description,
 				"page":              defaultDash(page),
 				"row":               defaultDash(orderNo),
 				"budgetUse":         strings.TrimSpace(budgetUse),
-				"emergency":         normalizeMultiline(emergency),
-				"special":           normalizeMultiline(special),
-				"approvalCondition": normalizeMultiline(approvalCond),
+				"emergency":         emergency,
+				"special":           special,
+				"approvalCondition": approvalCond,
 			}
 
 			docs = append(docs, search.Doc{

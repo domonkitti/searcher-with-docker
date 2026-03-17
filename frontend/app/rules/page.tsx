@@ -95,7 +95,7 @@ export default function RulesPage() {
             <br />- นอกจากนั้นให้จัดเป็น
             <span style={{ color: "blue" }}>งบทำการ</span> เช่น
             <br />   ราคาไม่เกิน 10,000 บาท ต่อชิ้น
-            <br />   อายุการใช้งานไม่เกิน 1 
+            <br />   อายุการใช้งานไม่เกิน 1 ปี
           </div>
         </div>
       </div>
