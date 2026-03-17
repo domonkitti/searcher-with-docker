@@ -18,31 +18,33 @@ import (
 //	B: หมวด (categoryMain)
 //	C: หมวดย่อย (categorySub)
 //	D: กลุ่มรายการ (group)
-//	E: รายการ (title)              <-- required (empty rows are skipped)
-//	F: หน้า (page)
-//	G: ลำดับ (row/order)
-//	H: เงื่อนไขพิเศษ (special)
-//	I: การใช้งบ (budgetUse)
-//	J: อำนาจอนุมัติ / ข้อความยาว (emergency) (optional)
-//	K: เงื่อนไขการอนุมัติ (approvalCondition) (optional)
+//	E: รายการ (title)                     <-- required
+//	F: คำบรรยาย (description)            <-- new
+//	G: หน้า (page)
+//	H: ลำดับ (row/order)
+//	I: เงื่อนไขพิเศษ (special)
+//	J: การใช้งบ (budgetUse)
+//	K: อำนาจอนุมัติ / ข้อความยาว (emergency) (optional)
+//	L: เงื่อนไขการอนุมัติ (approvalCondition) (optional)
 //
 // -----------------------------------------------------
 const (
-	ColSourceID         = 0  // A ID
-	ColCategoryMain     = 1  // B หมวด
-	ColCategorySub      = 2  // C หมวดย่อย
-	ColGroup            = 3  // D กลุ่มรายการ
-	ColTitle            = 4  // E รายการ
-	ColPage             = 5  // F หน้า
-	ColOrder            = 6  // G ลำดับ
-	ColSpecial          = 7  // H เงื่อนไขพิเศษ
-	ColBudgetUse        = 8  // I การใช้งบ
-	ColEmergency        = 9  // J อำนาจอนุมัติ / ข้อความยาว
-	ColApprovalCond     = 10 // K เงื่อนไขการอนุมัติ
+	ColSourceID     = 0  // A ID
+	ColCategoryMain = 1  // B หมวด
+	ColCategorySub  = 2  // C หมวดย่อย
+	ColGroup        = 3  // D กลุ่มรายการ
+	ColTitle        = 4  // E รายการ
+	ColDescription  = 5  // F คำบรรยาย
+	ColPage         = 6  // G หน้า
+	ColOrder        = 7  // H ลำดับ
+	ColSpecial      = 8  // I เงื่อนไขพิเศษ
+	ColBudgetUse    = 9  // J การใช้งบ
+	ColEmergency    = 10 // K อำนาจอนุมัติ / ข้อความยาว
+	ColApprovalCond = 11 // L เงื่อนไขการอนุมัติ
 )
 
 var headerKeywords = []string{
-	"id", "หมวด", "หมวดย่อย", "กลุ่มรายการ", "รายการ", "หน้า", "ลำดับ",
+	"id", "หมวด", "หมวดย่อย", "กลุ่มรายการ", "รายการ", "คำบรรยาย", "description", "หน้า", "ลำดับ",
 	"เงื่อนไข", "การใช้งบ", "ครุภัณฑ์", "อำนาจ", "อนุมัติ",
 	"category", "group", "title", "page", "order",
 }
@@ -85,12 +87,17 @@ func nonEmpty(xs []string) []string {
 	return out
 }
 
+func normalizeMultiline(s string) string {
+	return strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(s), "\r\n", "\n"), "\r", "\n")
+}
+
 type ItemExcelRow struct {
 	SourceID          string
 	CategoryMain      string
 	CategorySub       string
 	GroupName         string
 	Title             string
+	Description       string
 	Page              string
 	OrderNo           string
 	Special           string
@@ -136,6 +143,7 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]search.Doc, error) {
 			catMain := getCol(row, ColCategoryMain)
 			catSub := getCol(row, ColCategorySub)
 			group := getCol(row, ColGroup)
+			description := getCol(row, ColDescription)
 			page := getCol(row, ColPage)
 			orderNo := getCol(row, ColOrder)
 			special := getCol(row, ColSpecial)
@@ -144,24 +152,31 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]search.Doc, error) {
 			approvalCond := getCol(row, ColApprovalCond)
 
 			joined := strings.Join(nonEmpty(row), " | ")
-			boosted := strings.TrimSpace(strings.Repeat(title+" ", titleBoost))
-			fullText := fmt.Sprintf("%s| %s", boosted, joined)
+			boostedTitle := strings.TrimSpace(strings.Repeat(title+" ", titleBoost))
+
+			fullTextParts := []string{boostedTitle}
+			if strings.TrimSpace(description) != "" {
+				fullTextParts = append(fullTextParts, description)
+			}
+			fullTextParts = append(fullTextParts, joined)
+			fullText := strings.Join(fullTextParts, " | ")
 
 			counter++
 			id := fmt.Sprintf("%d", counter)
 
 			meta := map[string]any{
-				"source":              "excel",
-				"sourceId":            strings.TrimSpace(sourceID),
-				"categoryMain":        defaultDash(catMain),
-				"categorySub":         strings.TrimSpace(catSub),
-				"group":               strings.TrimSpace(group),
-				"page":                defaultDash(page),
-				"row":                 defaultDash(orderNo),
-				"budgetUse":           strings.TrimSpace(budgetUse),
-				"emergency":           strings.ReplaceAll(strings.ReplaceAll(emergency, "\r\n", "\n"), "\r", "\n"),
-				"special":             strings.ReplaceAll(strings.ReplaceAll(special, "\r\n", "\n"), "\r", "\n"),
-				"approvalCondition":   strings.ReplaceAll(strings.ReplaceAll(approvalCond, "\r\n", "\n"), "\r", "\n"),
+				"source":            "excel",
+				"sourceId":          strings.TrimSpace(sourceID),
+				"categoryMain":      defaultDash(catMain),
+				"categorySub":       strings.TrimSpace(catSub),
+				"group":             strings.TrimSpace(group),
+				"description":       normalizeMultiline(description),
+				"page":              defaultDash(page),
+				"row":               defaultDash(orderNo),
+				"budgetUse":         strings.TrimSpace(budgetUse),
+				"emergency":         normalizeMultiline(emergency),
+				"special":           normalizeMultiline(special),
+				"approvalCondition": normalizeMultiline(approvalCond),
 			}
 
 			docs = append(docs, search.Doc{
@@ -191,6 +206,7 @@ func LoadItemsFromExcelFile(path string) ([]ItemExcelRow, error) {
 			CategorySub:       strings.TrimSpace(toStr(meta["categorySub"])),
 			GroupName:         strings.TrimSpace(toStr(meta["group"])),
 			Title:             strings.TrimSpace(d.Title),
+			Description:       strings.TrimSpace(toStr(meta["description"])),
 			Page:              strings.TrimSpace(toStr(meta["page"])),
 			OrderNo:           strings.TrimSpace(toStr(meta["row"])),
 			Special:           strings.TrimSpace(toStr(meta["special"])),

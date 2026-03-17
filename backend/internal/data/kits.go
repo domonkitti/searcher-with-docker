@@ -3,6 +3,7 @@ package data
 import (
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/xuri/excelize/v2"
@@ -15,8 +16,8 @@ type KitLine struct {
 }
 
 type KitDetail struct {
-	KitID    string    `json:"kitId"`             // internal DB id
-	SourceID string    `json:"sourceId"`          // public URL id from Excel column A
+	KitID    string    `json:"kitId"` // internal DB id
+	SourceID string    `json:"sourceId"`
 	Category string    `json:"category,omitempty"`
 	KitName  string    `json:"kitName"`
 	Page     string    `json:"page,omitempty"`
@@ -25,25 +26,15 @@ type KitDetail struct {
 	Lines    []KitLine `json:"lines"`
 }
 
-// ---------------- EXCEL UPDATE GUIDE ----------------
-//
-// This loader finds a header row and maps columns by header text.
-// Expected headers (Thai/English) are matched loosely, but the default order is:
-//
-//   A: ID / Source ID
-//   B: หมวด
-//   C: ชื่อชุดเครื่องมือ
-//   D: รายการ
-//   E: รายการย่อย
-//   F: หน่วย
-//   G: หน้า
-//   H: ลำดับ
-//   I: เงื่อนไขพิเศษ
-//
-// -----------------------------------------------------
 type kitCols struct {
 	source, cat, kit, item, sub, unit, page, order, special int
 	ok                                                      bool
+}
+
+// ใช้เก็บหน้าทั้งหมดของแต่ละ KIT ชั่วคราวตอน import
+type kitAgg struct {
+	detail KitDetail
+	pages  []string
 }
 
 func LoadKitsFromExcel(path string) ([]KitDetail, error) {
@@ -60,7 +51,7 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 	sheets := f.GetSheetList()
 
 	// ใช้ source_id จาก Excel เป็นกุญแจหลัก
-	bySourceID := map[string]*KitDetail{}
+	bySourceID := map[string]*kitAgg{}
 
 	for _, sh := range sheets {
 		rows, err := f.GetRows(sh)
@@ -100,7 +91,7 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 			item := get(cols.item)
 			sub := get(cols.sub)
 			unit := get(cols.unit)
-			page := get(cols.page)
+			page := strings.TrimSpace(get(cols.page))
 			order := get(cols.order)
 			special := get(cols.special)
 
@@ -108,31 +99,36 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 				continue
 			}
 
-			k, ok := bySourceID[sourceID]
+			agg, ok := bySourceID[sourceID]
 			if !ok {
-				k = &KitDetail{
-					SourceID: sourceID,
-					Category: strings.TrimSpace(category),
-					KitName:  strings.TrimSpace(kitName),
-					Page:     strings.TrimSpace(page),
-					Order:    strings.TrimSpace(order),
-					Special:  strings.TrimSpace(special),
-					Lines:    make([]KitLine, 0, 32),
+				agg = &kitAgg{
+					detail: KitDetail{
+						SourceID: sourceID,
+						Category: strings.TrimSpace(category),
+						KitName:  strings.TrimSpace(kitName),
+						Order:    strings.TrimSpace(order),
+						Special:  strings.TrimSpace(special),
+						Lines:    make([]KitLine, 0, 32),
+					},
+					pages: make([]string, 0, 8),
 				}
-				bySourceID[sourceID] = k
+				bySourceID[sourceID] = agg
 			}
+
+			k := &agg.detail
 
 			if k.Category == "" && strings.TrimSpace(category) != "" {
 				k.Category = strings.TrimSpace(category)
-			}
-			if k.Page == "" && strings.TrimSpace(page) != "" {
-				k.Page = strings.TrimSpace(page)
 			}
 			if k.Order == "" && strings.TrimSpace(order) != "" {
 				k.Order = strings.TrimSpace(order)
 			}
 			if k.Special == "" && strings.TrimSpace(special) != "" {
 				k.Special = strings.TrimSpace(special)
+			}
+
+			if page != "" {
+				agg.pages = append(agg.pages, page)
 			}
 
 			k.Lines = append(k.Lines, KitLine{
@@ -144,14 +140,17 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 	}
 
 	out := make([]KitDetail, 0, len(bySourceID))
-	for _, v := range bySourceID {
-		sort.SliceStable(v.Lines, func(i, j int) bool {
-			if v.Lines[i].Item == v.Lines[j].Item {
-				return v.Lines[i].SubItem < v.Lines[j].SubItem
+	for _, agg := range bySourceID {
+		agg.detail.Page = summarizePageRange(agg.pages)
+
+		sort.SliceStable(agg.detail.Lines, func(i, j int) bool {
+			if agg.detail.Lines[i].Item == agg.detail.Lines[j].Item {
+				return agg.detail.Lines[i].SubItem < agg.detail.Lines[j].SubItem
 			}
-			return v.Lines[i].Item < v.Lines[j].Item
+			return agg.detail.Lines[i].Item < agg.detail.Lines[j].Item
 		})
-		out = append(out, *v)
+
+		out = append(out, agg.detail)
 	}
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -162,6 +161,55 @@ func LoadKitsFromExcel(path string) ([]KitDetail, error) {
 	})
 
 	return out, nil
+}
+
+func summarizePageRange(pages []string) string {
+	if len(pages) == 0 {
+		return ""
+	}
+
+	seen := map[string]bool{}
+	cleaned := make([]string, 0, len(pages))
+	nums := make([]int, 0, len(pages))
+	allNumeric := true
+
+	for _, p := range pages {
+		p = strings.TrimSpace(p)
+		if p == "" || seen[p] {
+			continue
+		}
+		seen[p] = true
+		cleaned = append(cleaned, p)
+
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			allNumeric = false
+			continue
+		}
+		nums = append(nums, n)
+	}
+
+	if len(cleaned) == 0 {
+		return ""
+	}
+
+	// ถ้าเป็นตัวเลขทั้งหมด ให้สรุปเป็น min-max
+	if allNumeric && len(nums) == len(cleaned) {
+		sort.Ints(nums)
+		minPage := nums[0]
+		maxPage := nums[len(nums)-1]
+
+		if minPage == maxPage {
+			return strconv.Itoa(minPage)
+		}
+		return strconv.Itoa(minPage) + " - " + strconv.Itoa(maxPage)
+	}
+
+	// ถ้าไม่ใช่ตัวเลขล้วน เอา fallback เป็นค่าที่เจอเรียงตามลำดับ
+	if len(cleaned) == 1 {
+		return cleaned[0]
+	}
+	return cleaned[0] + " - " + cleaned[len(cleaned)-1]
 }
 
 func normalizeKey(s string) string {
@@ -221,12 +269,12 @@ func findKitHeaderAndCols(rows [][]string) (headerRow int, cols kitCols) {
 		}
 	}
 
-	return 0, kitCols{ok: false}
+	return 0, kitCols{}
 }
 
-func getOr(m map[string]int, k string, def int) int {
-	if v, ok := m[k]; ok {
+func getOr(m map[string]int, key string, fallback int) int {
+	if v, ok := m[key]; ok {
 		return v
 	}
-	return def
+	return fallback
 }

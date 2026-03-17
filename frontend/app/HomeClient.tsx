@@ -18,6 +18,54 @@ function hasMeaningfulValue(v: any) {
   return s !== "" && s !== "-" && s.toLowerCase() !== "null" && s.toLowerCase() !== "undefined";
 }
 
+function normalizeMultiline(s: any) {
+  return esc(s).replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim();
+}
+
+function ResultDescription({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const normalized = normalizeMultiline(text);
+  if (!normalized) return null;
+
+  const maxLen = 180;
+  const isLong = normalized.length > maxLen;
+  const displayText = expanded || !isLong ? normalized : normalized.slice(0, maxLen).trimEnd() + "...";
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        color: "#4b5563",
+        lineHeight: 1.6,
+        whiteSpace: "pre-line",
+        fontSize: 15,
+      }}
+    >
+      <span>{displayText}</span>
+      {isLong && (
+        <>
+          {" "}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            style={{
+              border: "none",
+              background: "none",
+              color: "#2563eb",
+              cursor: "pointer",
+              padding: 0,
+              font: "inherit",
+            }}
+          >
+            {expanded ? "ซ่อน" : "ดูเพิ่มเติม"}
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function HomeClient() {
   const [q, setQ] = useState("");
   const [items, setItems] = useState<SearchResult[]>([]);
@@ -34,7 +82,6 @@ export default function HomeClient() {
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const boxRef = useRef<HTMLDivElement | null>(null);
 
-  // สำคัญ: กันไม่ให้ runSuggest ยิงซ้ำหลังจากเลือก suggestion
   const suppressSuggestRef = useRef(false);
 
   async function runSearch(term: string) {
@@ -100,7 +147,6 @@ export default function HomeClient() {
   useEffect(() => {
     if (suggestTimer.current) clearTimeout(suggestTimer.current);
 
-    // ถ้าพึ่งเลือกจาก suggestion มา ไม่ต้องยิง suggest ซ้ำ
     if (suppressSuggestRef.current) {
       suppressSuggestRef.current = false;
       return;
@@ -281,6 +327,7 @@ export default function HomeClient() {
           const categoryMain = esc(m.categoryMain || "-");
           const categorySub = esc(m.categorySub || "");
           const group = esc(m.group || "");
+          const description = esc(m.description || "");
           const page = esc(m.page || "-");
           const row = esc(m.row || "-");
           const score = esc(r.score);
@@ -291,7 +338,9 @@ export default function HomeClient() {
                 {esc(r.title)}
               </a>
 
-              <div className="meta">
+              <ResultDescription text={description} />
+
+              <div className="meta" style={{ marginTop: 10 }}>
                 <div>หมวด: {categoryMain}</div>
                 {!!categorySub.trim() && <div>หมวดย่อย: {categorySub}</div>}
                 {!!group.trim() && <div>กลุ่มรายการ: {group}</div>}

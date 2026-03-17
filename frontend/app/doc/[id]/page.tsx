@@ -59,6 +59,7 @@ export default function DocDetailPage() {
   const catMain = esc(m.categoryMain || "-");
   const catSub = esc(m.categorySub || "");
   const groupName = esc(m.group || "");
+  const description = esc(m.description || "");
   const page = esc(m.page || "");
   const row = esc(m.row || "");
   const budgetUse = esc(m.budgetUse || "");
@@ -122,7 +123,20 @@ export default function DocDetailPage() {
               {esc(doc.title)}
             </div>
 
-            <div className="small" style={{ marginTop: 8 }}>
+            {!!description.trim() && (
+              <div
+                style={{
+                  marginTop: 10,
+                  color: "#4b5563",
+                  lineHeight: 1.7,
+                  whiteSpace: "pre-line",
+                }}
+              >
+                {description}
+              </div>
+            )}
+
+            <div className="small" style={{ marginTop: 12 }}>
               <div>
                 <b>หมวด:</b> {catMain}
               </div>
@@ -209,7 +223,7 @@ export default function DocDetailPage() {
                 <b>เงื่อนไขการอนุมัติ:</b>
                 <div className="small" style={{ marginTop: 8, whiteSpace: "pre-wrap" }}>
                   {approvalCondition}
-                </div>                
+                </div>
               </div>
             )}
 
@@ -239,11 +253,7 @@ export default function DocDetailPage() {
 
                     return (
                       <li key={`${href}-${idx}`} style={{ marginTop: 6 }}>
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
+                        <a href={href} target="_blank" rel="noopener noreferrer">
                           {label}
                         </a>
                       </li>

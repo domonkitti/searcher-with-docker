@@ -17,6 +17,7 @@ type Item struct {
 	CategorySub       string
 	GroupName         string
 	Title             string
+	Description       string
 	Page              string
 	OrderNo           string
 	Special           string
@@ -47,6 +48,7 @@ func LoadItemsFromExcel(path string) ([]Item, error) {
 			CategorySub:       strings.TrimSpace(r.CategorySub),
 			GroupName:         strings.TrimSpace(r.GroupName),
 			Title:             strings.TrimSpace(r.Title),
+			Description:       strings.TrimSpace(r.Description),
 			Page:              strings.TrimSpace(r.Page),
 			OrderNo:           strings.TrimSpace(r.OrderNo),
 			Special:           strings.TrimSpace(r.Special),
@@ -75,8 +77,8 @@ func ReplaceAllItems(ctx context.Context, db *sql.DB, items []Item) error {
 
 	stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO items (
-    source_id, category_main, category_sub, group_name, title, page, order_no, special, budget_use, emergency, approval_condition
-) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`)
+    source_id, category_main, category_sub, group_name, title, description, page, order_no, special, budget_use, emergency, approval_condition
+) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`)
 	if err != nil {
 		return err
 	}
@@ -92,6 +94,7 @@ INSERT INTO items (
 			nullIfBlank(it.CategorySub),
 			nullIfBlank(it.GroupName),
 			it.Title,
+			nullIfBlank(it.Description),
 			nullIfBlank(it.Page),
 			nullIfBlank(it.OrderNo),
 			nullIfBlank(it.Special),
@@ -159,6 +162,7 @@ SELECT id,
        COALESCE(category_sub, ''),
        COALESCE(group_name, ''),
        COALESCE(title, ''),
+       COALESCE(description, ''),
        COALESCE(page, ''),
        COALESCE(order_no, ''),
        COALESCE(special, ''),
@@ -182,6 +186,7 @@ ORDER BY id ASC`)
 			&it.CategorySub,
 			&it.GroupName,
 			&it.Title,
+			&it.Description,
 			&it.Page,
 			&it.OrderNo,
 			&it.Special,
@@ -236,17 +241,33 @@ func LoadDocsFromDB(ctx context.Context, db *sql.DB, titleBoost int) ([]search.D
 
 	docs := make([]search.Doc, 0, len(items))
 	for _, it := range items {
-		boosted := strings.TrimSpace(strings.Repeat(it.Title+" ", titleBoost))
+		boostedTitle := strings.TrimSpace(strings.Repeat(it.Title+" ", titleBoost))
+
+		textParts := []string{boostedTitle}
+		if strings.TrimSpace(it.Description) != "" {
+			textParts = append(textParts, strings.TrimSpace(it.Description))
+		}
+		textParts = append(textParts,
+			strings.TrimSpace(it.CategoryMain),
+			strings.TrimSpace(it.CategorySub),
+			strings.TrimSpace(it.GroupName),
+			strings.TrimSpace(it.Special),
+			strings.TrimSpace(it.BudgetUse),
+			strings.TrimSpace(it.Emergency),
+			strings.TrimSpace(it.ApprovalCondition),
+		)
+
 		docs = append(docs, search.Doc{
 			ID:    strconv.FormatInt(it.ID, 10),
 			Title: it.Title,
-			Text:  boosted,
+			Text:  strings.Join(textParts, " | "),
 			Meta: map[string]any{
 				"source":            "postgres",
 				"sourceId":          strings.TrimSpace(it.SourceID),
 				"categoryMain":      defaultDash(it.CategoryMain),
 				"categorySub":       strings.TrimSpace(it.CategorySub),
 				"group":             strings.TrimSpace(it.GroupName),
+				"description":       strings.ReplaceAll(strings.ReplaceAll(it.Description, "\r\n", "\n"), "\r", "\n"),
 				"page":              defaultDash(it.Page),
 				"row":               defaultDash(it.OrderNo),
 				"budgetUse":         strings.TrimSpace(it.BudgetUse),

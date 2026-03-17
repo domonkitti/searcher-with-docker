@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS items (
     category_sub TEXT,
     group_name TEXT,
     title TEXT NOT NULL,
+    description TEXT,
     page TEXT,
     order_no TEXT,
     special TEXT,
