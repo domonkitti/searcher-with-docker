@@ -364,12 +364,17 @@ export default function HomeClient() {
           const page = esc(m.page || "-");
           const row = esc(m.row || "-");
           const score = esc(r.score);
+          const sourceId = esc(m.sourceId || "").trim().toLowerCase();
           const snippet = buildSnippet(description, q);
           return (
             <div className="result" key={r.id}>
-              <a className="title" href={`/doc/${encodeURIComponent(r.id)}`}>
-                {esc(r.title)}
-              </a>
+              {sourceId ? (
+                <a className="title" href={`/doc/${encodeURIComponent(sourceId)}`}>
+                  {esc(r.title)}
+                </a>
+              ) : (
+                <div className="title">{esc(r.title)}</div>
+              )}
 
               {!!snippet && (
                 <div

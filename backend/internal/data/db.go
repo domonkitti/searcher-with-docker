@@ -90,8 +90,15 @@ CREATE TABLE IF NOT EXISTS kit_lines (
     item TEXT NOT NULL,
     sub_item TEXT,
     unit TEXT,
-    line_no INT NOT NULL DEFAULT 0
+    line_no INT NOT NULL DEFAULT 0,
+    linked_item_source_id TEXT
 );
+
+ALTER TABLE kit_lines
+ADD COLUMN IF NOT EXISTS linked_item_source_id TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_kit_lines_linked_item_source_id
+ON kit_lines(linked_item_source_id);
 
 CREATE TABLE IF NOT EXISTS item_links (
     id BIGSERIAL PRIMARY KEY,

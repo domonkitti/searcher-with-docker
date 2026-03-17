@@ -217,12 +217,22 @@ func RunServer() {
 	})
 
 	r.GET("/api/doc/:id", func(c *gin.Context) {
-		_, _, _, engine := state.snapshot()
-		id := c.Param("id")
-		if d, ok := engine.GetByID(id); ok {
-			c.JSON(200, d)
+		docs, _, _, _ := state.snapshot()
+		sourceID := strings.TrimSpace(strings.ToLower(c.Param("id")))
+		if sourceID == "" {
+			c.JSON(http.StatusNotFound, gin.H{"detail": "Not Found"})
 			return
 		}
+
+		for _, d := range docs {
+			m := d.Meta
+			metaSourceID, _ := m["sourceId"].(string)
+			if strings.TrimSpace(strings.ToLower(metaSourceID)) == sourceID {
+				c.JSON(200, d)
+				return
+			}
+		}
+
 		c.JSON(http.StatusNotFound, gin.H{"detail": "Not Found"})
 	})
 
@@ -238,10 +248,11 @@ func RunServer() {
 			cs, _ := m["categorySub"].(string)
 			if strings.TrimSpace(cm) == main && strings.TrimSpace(cs) == sub {
 				items = append(items, gin.H{
-					"id":    d.ID,
-					"title": d.Title,
-					"page":  m["page"],
-					"row":   m["row"],
+					"id":       d.ID,
+					"sourceId": m["sourceId"],
+					"title":    d.Title,
+					"page":     m["page"],
+					"row":      m["row"],
 				})
 			}
 		}
@@ -272,10 +283,11 @@ func RunServer() {
 			gp, _ := m["group"].(string)
 			if strings.TrimSpace(cm) == main && strings.TrimSpace(cs) == sub && strings.TrimSpace(gp) == group {
 				items = append(items, gin.H{
-					"id":    d.ID,
-					"title": d.Title,
-					"page":  m["page"],
-					"row":   m["row"],
+					"id":       d.ID,
+					"sourceId": m["sourceId"],
+					"title":    d.Title,
+					"page":     m["page"],
+					"row":      m["row"],
 				})
 			}
 		}
