@@ -56,6 +56,10 @@ type EngineConfig struct {
 	BoostTitlePhrase float64
 	BoostAllTokens   float64
 
+	// field match (unique token per field)
+	WTitleField float64
+	WDescField  float64
+
 	// suggest
 	SuggestPrefixBoost float64
 	SuggestInfixBoost  float64
@@ -129,6 +133,8 @@ func DefaultEngineConfig() EngineConfig {
 		BoostTitleExact:  1.8,
 		BoostTitlePhrase: 0.9,
 		BoostAllTokens:   0.8,
+		WTitleField:      1.2,
+		WDescField:       1.0,
 
 		SuggestPrefixBoost: 5.0,
 		SuggestInfixBoost:  1.5,
@@ -298,6 +304,44 @@ func (e *Engine) GetByID(id string) (Doc, bool) {
 	return Doc{}, false
 }
 
+func metaString(meta map[string]any, key string) string {
+	if meta == nil {
+		return ""
+	}
+	v, ok := meta[key]
+	if !ok || v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if ok {
+		return s
+	}
+	return fmt.Sprint(v)
+}
+
+func uniqueFieldMatchScore(field string, qTokens []string) float64 {
+	if field == "" || len(qTokens) == 0 {
+		return 0
+	}
+
+	seen := map[string]bool{}
+	score := 0.0
+
+	for _, tok := range qTokens {
+		tok = strings.TrimSpace(strings.ToLower(tok))
+		if tok == "" || seen[tok] {
+			continue
+		}
+		seen[tok] = true
+
+		if strings.Contains(field, tok) {
+			score += 1.0
+		}
+	}
+
+	return score
+}
+
 // ---------------ส่วนของการ เซฺิร์ชและวิเคราะห์ข้อความ----------------
 
 func (e *Engine) Search(query string, k int) []SearchResult {
@@ -357,6 +401,7 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 		}
 
 		titleLower := strings.ToLower(normalizeWS(d.Title))
+		descLower := strings.ToLower(normalizeWS(metaString(d.Meta, "description")))
 
 		if titleLower == qNorm {
 			score += e.Cfg.BoostTitleExact
@@ -366,6 +411,8 @@ func (e *Engine) Search(query string, k int) []SearchResult {
 		}
 
 		if len(az.Exact) > 0 {
+			score += uniqueFieldMatchScore(titleLower, az.Exact) * e.Cfg.WTitleField
+			score += uniqueFieldMatchScore(descLower, az.Exact) * e.Cfg.WDescField
 			matchedTerms := countMatchedExactTokens(titleLower, az.Exact)
 			allInTitle := matchedTerms == len(az.Exact)
 

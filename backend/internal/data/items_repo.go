@@ -243,16 +243,12 @@ func LoadDocsFromDB(ctx context.Context, db *sql.DB, titleBoost int) ([]search.D
 	for _, it := range items {
 		boostedTitle := strings.TrimSpace(strings.Repeat(it.Title+" ", titleBoost))
 
+		// Search text intentionally stays narrow: title + description only.
+		// Extra business fields still go into Meta for rendering / filtering,
+		// but should not outrank the main item title during retrieval.
 		textParts := []string{
 			boostedTitle,
 			strings.TrimSpace(it.Description),
-			strings.TrimSpace(it.CategoryMain),
-			strings.TrimSpace(it.CategorySub),
-			strings.TrimSpace(it.GroupName),
-			strings.TrimSpace(it.Special),
-			strings.TrimSpace(it.BudgetUse),
-			strings.TrimSpace(it.Emergency),
-			strings.TrimSpace(it.ApprovalCondition),
 		}
 
 		docs = append(docs, search.Doc{

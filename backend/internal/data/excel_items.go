@@ -151,14 +151,15 @@ func LoadDocsFromExcel(path string, titleBoost int) ([]search.Doc, error) {
 			emergency := normalizeMultiline(getCol(row, ColEmergency))
 			approvalCond := normalizeMultiline(getCol(row, ColApprovalCond))
 
-			joined := strings.Join(nonEmpty(row), " | ")
 			boostedTitle := strings.TrimSpace(strings.Repeat(title+" ", titleBoost))
 
+			// Search text intentionally stays narrow: title + description only.
+			// Other raw Excel columns remain available in meta / UI, but should not
+			// dominate ranking for the main search experience.
 			fullTextParts := []string{boostedTitle}
 			if strings.TrimSpace(description) != "" {
 				fullTextParts = append(fullTextParts, description)
 			}
-			fullTextParts = append(fullTextParts, joined)
 			fullText := strings.Join(fullTextParts, " | ")
 
 			counter++

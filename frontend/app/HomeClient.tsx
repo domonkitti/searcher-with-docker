@@ -385,7 +385,7 @@ export default function HomeClient() {
                     fontSize: 15,
                   }}
                 >
-                  <HighlightedSnippet snippet={description} query={q} />
+                  <HighlightedSnippet snippet={snippet} query={q} />
                 </div>
               )}
 
