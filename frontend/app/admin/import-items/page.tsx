@@ -76,7 +76,7 @@ export default function ImportItemsPage() {
       >
         <ImportCard
           title="นำเข้ารายการหลัก"
-          note="ไฟล์รายการหลักจะลบข้อมูลรายการเดิมทั้งหมดในฐานข้อมูล แล้วแทนที่ด้วยข้อมูลใหม่จาก Excel โดยไฟล์นี้ต้องมีคอลัมน์ ID เป็นคอลัมน์แรก"
+          note="อย่าลิมอัพเดท ลิงก์ด้วยนะ"
           endpoint="/api/admin/import/items"
         />
 
@@ -88,7 +88,7 @@ export default function ImportItemsPage() {
 
         <ImportCard
           title="นำเข้าชุดพัสดุ"
-          note="ไฟล์ที่อัปโหลดจะลบข้อมูลชุดพัสดุเดิมทั้งหมดในฐานข้อมูล แล้วแทนที่ด้วยข้อมูลใหม่จาก Excel"
+          note="ไฟล์ที่อัปโหลดจะลบข้อมูลชุดพัสดุเดิมทั้งหมดในฐานข้อมูล"
           endpoint="/api/admin/import/kits"
         />
       </section>

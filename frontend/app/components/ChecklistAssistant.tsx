@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import styles from "./ChecklistAssistant.module.css";
+import { useRouter } from "next/navigation";
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -14,51 +15,67 @@ export default function ChecklistAssistant() {
   const [lifeOverOneYear, setLifeOverOneYear] = useState(false);
   const [priceOverTenThousand, setPriceOverTenThousand] = useState(false);
 
+  const router = useRouter();
+
   const progressPercent = step === 1 ? 25 : step === 2 ? 50 : step === 3 ? 75 : 100;
+  const isInvestment = lifeOverOneYear && priceOverTenThousand;
+
+  const showApprovalSection =
+    foundInItemSearch === true ||
+    foundInCriteria === true ||
+    (foundInItemSearch === false && foundInCriteria === false && isInvestment);
 
   const summary = useMemo(() => {
+    const principleNotes = [
+      'หากเขตมีอำนาจตามที่ระบุไว้ใน "อำนาจอนุมัติ"',
+      "หากมีการระบุให้พิจารณาความเหมาะสม ให้ส่งให้หน่วยงานนั้นๆ ก่อน",
+    ];
+
+    const principleApproval = [
+      "ผู้มีอำนาจอนุมัติหลักการตามวงเงิน",
+      "ผชก. ≤ 1 ล้านบาท",
+      "รผก.(น,ฉ,ก,ต) > 1 ล้านบาท แต่ ≤ 5 ล้านบาท",
+      "ผวก. วงเงิน > 5 ล้านบาท",
+    ];
+
+    const budgetNotes = ['หากเขตมีอำนาจตามที่ระบุไว้ใน "อำนาจอนุมัติ"'];
+
+    const budgetApproval = [
+      "ผู้มีอำนาจอนุมัติงบเงิน คือ",
+      "ผชก.เขต / รผก.(น,ฉ,ก,ต)",
+    ];
+
     if (foundInItemSearch === true) {
       return {
         variant: "info",
-        result: "พบรายการที่ต้องการแล้ว",
-        details: [
-          "ข้อ 1: พบรายการที่ต้องการจากการค้นหา",
-          "ข้อ 2: ไม่จำเป็นต้องตรวจต่อ",
-          "ข้อ 3: ไม่จำเป็นต้องตรวจต่อ",
-          "คำแนะนำ: ให้ดำเนินการตามผลจากรายการที่ค้นพบ",
-        ],
+        result: "ดำเนินการตามเงื่อนไขที่ระบุภายในรายการที่พบ",
+        principleNotes,
+        principleApproval,
+        budgetNotes,
+        budgetApproval,
       };
     }
 
     if (foundInItemSearch === false && foundInCriteria === true) {
       return {
         variant: "info",
-        result: "พบในหลักเกณฑ์พิจารณา",
-        details: [
-          "ข้อ 1: ไม่พบรายการที่ต้องการจากการค้นหา",
-          "ข้อ 2: พบในหลักเกณฑ์พิจารณา",
-          "ข้อ 3: ไม่จำเป็นต้องตรวจต่อ",
-          "คำแนะนำ: ให้ดำเนินการตามผลในหลักเกณฑ์พิจารณา",
-        ],
+        result: "ดำเนินการตามเงื่อนไขที่ระบุภายในรายการที่พบ",
+        principleNotes,
+        principleApproval,
+        budgetNotes,
+        budgetApproval,
       };
     }
-
-    const isInvestment = lifeOverOneYear && priceOverTenThousand;
 
     return {
       variant: isInvestment ? "success" : "warning",
       result: isInvestment ? "เป็นงบลงทุน" : "เป็นงบทำการ",
-      details: [
-        "ข้อ 1: ไม่พบรายการที่ต้องการจากการค้นหา",
-        "ข้อ 2: ไม่พบในหลักเกณฑ์พิจารณา",
-        `ข้อ 3.1: อายุใช้งานมากกว่า 1 ปี = ${lifeOverOneYear ? "ใช่" : "ไม่ใช่"}`,
-        `ข้อ 3.2: ราคาต่อชิ้นมากกว่า 10,000 บาท = ${priceOverTenThousand ? "ใช่" : "ไม่ใช่"}`,
-        isInvestment
-          ? "คำแนะนำ: เข้าหลักเกณฑ์เป็นงบลงทุน เพราะผ่านทั้ง 2 เงื่อนไข"
-          : "คำแนะนำ: ไม่ผ่านครบทั้ง 2 เงื่อนไข จึงเป็นงบทำการ",
-      ],
+      principleNotes,
+      principleApproval,
+      budgetNotes,
+      budgetApproval,
     };
-  }, [foundInItemSearch, foundInCriteria, lifeOverOneYear, priceOverTenThousand]);
+  }, [foundInItemSearch, foundInCriteria, isInvestment]);
 
   const resetAll = () => {
     setStep(1);
@@ -109,7 +126,7 @@ export default function ChecklistAssistant() {
             <div className={styles.headerTop}>
               <div>
                 <h2 className={styles.title}>ตัวช่วยตรวจสอบงบประมาณ</h2>
-                <p className={styles.subtitle}>ใช้เป็นตัวช่วยไล่ดูว่าควรตรวจตรงไหนก่อน</p>
+                <p className={styles.subtitle}>ติดต่อสอบถาม 5370-5377</p>
               </div>
 
               <button
@@ -138,9 +155,16 @@ export default function ChecklistAssistant() {
                   <div>
                     <p className={styles.eyebrow}>ข้อ 1</p>
                     <h3 className={styles.sectionTitle}>ลองค้นหารายการที่ต้องการก่อน</h3>
-                    <p className={styles.sectionDesc}>
-                      หากพบรายการที่ตรงแล้ว สามารถสรุปผลได้ทันที
-                    </p>
+                    <button
+                      type="button"
+                      className={styles.sectionDescLink}
+                      onClick={() => {
+                        setIsOpen(false);
+                        router.push("/");
+                      }}
+                    >
+                      ไปหน้าค้นหา
+                    </button>
                   </div>
                 </div>
 
@@ -156,7 +180,7 @@ export default function ChecklistAssistant() {
                       setStep(4);
                     }}
                   >
-                    เจอรายการ
+                    พบรายการ
                   </button>
 
                   <button
@@ -167,7 +191,7 @@ export default function ChecklistAssistant() {
                       setStep(2);
                     }}
                   >
-                    ไม่เจอ
+                    ไม่พบรายการ
                   </button>
                 </div>
               </section>
@@ -179,10 +203,21 @@ export default function ChecklistAssistant() {
                   <div className={styles.iconBox}>📋</div>
                   <div>
                     <p className={styles.eyebrow}>ข้อ 2</p>
-                    <h3 className={styles.sectionTitle}>ลองค้นหาในหลักเกณฑ์พิจารณา</h3>
-                    <p className={styles.sectionDesc}>
-                      ถ้าพบเงื่อนไขที่ตรง ให้ไปสรุปผลได้เลย
-                    </p>
+                    <h3 className={styles.sectionTitle}>
+                      ลองค้นหาหนังสือหลักเกณฑ์การจำแนกประเภทรายจ่ายตามงบประมาณ
+                    </h3>
+                    <button
+                      type="button"
+                      className={styles.sectionDescLink}
+                      onClick={() => {
+                        setIsOpen(false);
+                        window.open(
+                          "https://drive.google.com/file/d/1peCJ03dLvH7Z6ZMjyXJIOw_n_H2RvhjJ/view?pli=1"
+                        );
+                      }}
+                    >
+                      เปิดหนังสือหลักเกณฑ์ฯ
+                    </button>
                   </div>
                 </div>
 
@@ -197,7 +232,7 @@ export default function ChecklistAssistant() {
                       setStep(4);
                     }}
                   >
-                    เจอ
+                    พบรายการ
                   </button>
 
                   <button
@@ -208,7 +243,7 @@ export default function ChecklistAssistant() {
                       setStep(3);
                     }}
                   >
-                    ไม่เจอ
+                    ไม่พบรายการ
                   </button>
                 </div>
               </section>
@@ -221,9 +256,7 @@ export default function ChecklistAssistant() {
                   <div>
                     <p className={styles.eyebrow}>ข้อ 3</p>
                     <h3 className={styles.sectionTitle}>ตรวจสอบเงื่อนไขงบลงทุน</h3>
-                    <p className={styles.sectionDesc}>
-                      ต้องผ่านทั้ง 2 ข้อ จึงจะสรุปเป็นงบลงทุน
-                    </p>
+                    <p className={styles.sectionDesc}>ในกรณีไม่พบรายการ</p>
                   </div>
                 </div>
 
@@ -275,13 +308,45 @@ export default function ChecklistAssistant() {
                   {summary.result}
                 </div>
 
-                <div className={styles.summaryList}>
-                  {summary.details.map((detail, index) => (
-                    <div key={`${detail}-${index}`} className={styles.summaryItem}>
-                      {detail}
+                {showApprovalSection && (
+                  <div className={styles.approvalSection}>
+                    <div className={styles.approvalBox}>
+                      <h4 className={styles.approvalTitle}>อำนาจอนุมัติหลักการ</h4>
+
+                      {summary.principleNotes.map((item, index) => (
+                        <div key={`principle-note-${index}`} className={styles.approvalNote}>
+                          {item}
+                        </div>
+                      ))}
+
+                      <div className={styles.approvalInnerBox}>
+                        {summary.principleApproval.map((item, index) => (
+                          <div key={`principle-${index}`} className={styles.approvalItem}>
+                            {item}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  ))}
-                </div>
+
+                    <div className={styles.approvalBox}>
+                      <h4 className={styles.approvalTitle}>อำนาจอนุมัติงบเงิน</h4>
+
+                      {summary.budgetNotes.map((item, index) => (
+                        <div key={`budget-note-${index}`} className={styles.approvalNote}>
+                          {item}
+                        </div>
+                      ))}
+
+                      <div className={styles.approvalInnerBox}>
+                        {summary.budgetApproval.map((item, index) => (
+                          <div key={`budget-${index}`} className={styles.approvalItem}>
+                            {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </section>
             )}
           </div>

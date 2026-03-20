@@ -26,9 +26,8 @@ export default function ContactBar() {
           flexWrap: "wrap",
         }}
       >
-        <div>ติดต่อสอบถาม: 02-590-5376</div>
+        <div>ติดต่อสอบถาม: 02-590-5370-5377</div>
         <div>
-          จัดทำโดย : กงป
         </div>
       </div>
     </div>

@@ -164,9 +164,8 @@ export default function DocDetailPage() {
 
             {!!budgetUse.trim() && <div className="small" style={{ marginTop: 6 }}><b>การใช้งบ:</b> {budgetUse}</div>}
             {!!emergency.trim() && <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}><b>อำนาจอนุมัติ:</b> {emergency}</div>}
-            {!!special.trim() && <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}><b>หมายเหตุ:</b> {special}</div>}
             {!!approvalCondition.trim() && <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}><b>เงื่อนไขการอนุมัติ:</b> <br />{approvalCondition}</div>}
-
+            {!!special.trim() && <div className="small" style={{ marginTop: 6, whiteSpace: "pre-wrap" }}><b>หมายเหตุ:</b> {special}</div>}
             {links.length > 0 && (
               <div style={{ marginTop: 14 }}>
                 <div className="small" style={{ marginBottom: 6 }}><b>ลิงก์อ้างอิง</b></div>

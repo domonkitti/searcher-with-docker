@@ -350,3 +350,85 @@
     font-size: 18px;
   }
 }
+.sectionDescLink {
+  display: inline-block;
+  margin-top: 6px;
+  color: #a88400;
+  font-size: 14px;
+  line-height: 1.6;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.sectionDescLink:hover {
+  text-decoration: underline;
+}
+.sectionDescLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 8px;
+  padding: 10px 14px;
+  border: 1px solid #e7d39a;
+  border-radius: 999px;
+  background: #fff8e1;
+  color: #8f7200;
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sectionDescLink:hover {
+  background: #f6e7b4;
+  border-color: #d7b95c;
+  color: #7a6100;
+  transform: translateY(-1px);
+}
+
+.sectionDescLink:active {
+  transform: translateY(0);
+}
+
+.sectionDescLink:focus-visible {
+  outline: 2px solid #d7b95c;
+  outline-offset: 2px;
+}
+.approvalSection {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.approvalBox {
+  border: 1px solid #d9d9d9;
+  border-radius: 12px;
+  padding: 14px;
+  background: #fff;
+}
+
+.approvalTitle {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.approvalNote {
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.approvalInnerBox {
+  margin-top: 12px;
+  border: 1px solid #e3e3e3;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.approvalItem {
+  padding: 6px 0;
+  line-height: 1.5;
+}
