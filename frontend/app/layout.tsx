@@ -10,7 +10,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="th">
       <body style={{ paddingBottom: "64px" }}>
         {children}
-        <ChecklistAssistant />
+        {/* <ChecklistAssistant /> */}
         <ContactBar />
       </body>
     </html>

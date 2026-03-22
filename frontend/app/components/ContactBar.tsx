@@ -26,7 +26,7 @@ export default function ContactBar() {
           flexWrap: "wrap",
         }}
       >
-        <div>ติดต่อสอบถาม: 02-590-5370-5377</div>
+        <div>ติดต่อสอบถาม: 5370-5379</div>
         <div>
         </div>
       </div>
